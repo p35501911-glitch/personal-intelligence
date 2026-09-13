@@ -45,3 +45,4 @@ dist/
 .env
 
 /src/generated/prisma
+supabase/.temp/
