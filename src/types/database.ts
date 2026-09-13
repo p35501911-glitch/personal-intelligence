@@ -375,6 +375,90 @@ export interface Database {
         };
         Relationships: [];
       };
+      topic_digests: {
+        Row: {
+          id: string;
+          user_id: string;
+          period_type: "daily" | "weekly";
+          period_start: string;
+          period_end: string;
+          title: string;
+          executive_summary: string;
+          key_developments: unknown;
+          category_highlights: unknown;
+          opportunities: unknown;
+          risks: unknown;
+          story_count: number;
+          important_story_count: number;
+          model: string | null;
+          prompt_version: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          period_type: "daily" | "weekly";
+          period_start: string;
+          period_end: string;
+          title: string;
+          executive_summary: string;
+          key_developments?: unknown;
+          category_highlights?: unknown;
+          opportunities?: unknown;
+          risks?: unknown;
+          story_count?: number;
+          important_story_count?: number;
+          model?: string | null;
+          prompt_version?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          period_type?: "daily" | "weekly";
+          period_start?: string;
+          period_end?: string;
+          title?: string;
+          executive_summary?: string;
+          key_developments?: unknown;
+          category_highlights?: unknown;
+          opportunities?: unknown;
+          risks?: unknown;
+          story_count?: number;
+          important_story_count?: number;
+          model?: string | null;
+          prompt_version?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      topic_digest_stories: {
+        Row: {
+          id: string;
+          digest_id: string;
+          story_id: string;
+          rank: number;
+          importance_score: number | null;
+          is_important: boolean;
+        };
+        Insert: {
+          id?: string;
+          digest_id: string;
+          story_id: string;
+          rank: number;
+          importance_score?: number | null;
+          is_important?: boolean;
+        };
+        Update: {
+          id?: string;
+          digest_id?: string;
+          story_id?: string;
+          rank?: number;
+          importance_score?: number | null;
+          is_important?: boolean;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -422,3 +506,11 @@ export type UpdateStoryIntelligence = Database["public"]["Tables"]["story_intell
 export type UserSavedStoryRow = Database["public"]["Tables"]["user_saved_stories"]["Row"];
 export type InsertUserSavedStory = Database["public"]["Tables"]["user_saved_stories"]["Insert"];
 export type UpdateUserSavedStory = Database["public"]["Tables"]["user_saved_stories"]["Update"];
+
+export type TopicDigestRow = Database["public"]["Tables"]["topic_digests"]["Row"];
+export type InsertTopicDigest = Database["public"]["Tables"]["topic_digests"]["Insert"];
+export type UpdateTopicDigest = Database["public"]["Tables"]["topic_digests"]["Update"];
+
+export type TopicDigestStoryRow = Database["public"]["Tables"]["topic_digest_stories"]["Row"];
+export type InsertTopicDigestStory = Database["public"]["Tables"]["topic_digest_stories"]["Insert"];
+export type UpdateTopicDigestStory = Database["public"]["Tables"]["topic_digest_stories"]["Update"];

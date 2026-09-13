@@ -4,3 +4,4 @@ export * from "./prompts";
 export * from "./service";
 export * from "./classifier";
 export * from "./pipeline";
+export * from "./digest";
