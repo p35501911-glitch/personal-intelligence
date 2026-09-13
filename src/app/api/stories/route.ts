@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getStories } from "@/server/news/stories";
+import { getUserPersonalizedFeed } from "@/server/news/relevance";
 
 // Zod schema for query parameter validation
 export const storiesQuerySchema = z.object({
@@ -27,6 +28,11 @@ export const storiesQuerySchema = z.object({
     .string()
     .trim()
     .min(1, "Category ID cannot be empty")
+    .optional(),
+  personalized: z
+    .coerce
+    .boolean()
+    .default(false)
     .optional(),
 });
 
@@ -65,6 +71,10 @@ export async function GET(request: Request) {
     if (categoryIdParam !== null && categoryIdParam.trim() !== "") {
       rawParams.categoryId = categoryIdParam.trim();
     }
+    const personalizedParam = searchParams.get("personalized");
+    if (personalizedParam !== null && personalizedParam.trim() !== "") {
+      rawParams.personalized = personalizedParam.trim();
+    }
 
     // Validate parameters with Zod
     const validation = storiesQuerySchema.safeParse(rawParams);
@@ -79,7 +89,32 @@ export async function GET(request: Request) {
       );
     }
 
-    const { limit, offset, status, categoryId } = validation.data;
+    const { limit, offset, status, categoryId, personalized } = validation.data;
+
+    // Personalized feed request
+    if (personalized) {
+      const feedRes = await getUserPersonalizedFeed({
+        limit,
+        offset,
+      });
+
+      return NextResponse.json(
+        {
+          success: true,
+          stories: feedRes.stories,
+          pagination: {
+            limit: feedRes.limit,
+            offset: feedRes.offset,
+            count: feedRes.count,
+          },
+          meta: {
+            personalized: true,
+            mode: feedRes.mode,
+          },
+        },
+        { status: 200 }
+      );
+    }
 
     // Fetch stories from database
     const result = await getStories({
