@@ -3,6 +3,7 @@ import type { Database, InsertArticle, InsertSource, Json } from "@/types/databa
 import type { NormalizedArticle } from "./types";
 import { getServiceSupabaseClient } from "../supabase";
 import { canonicalizeUrl, normalizeTitle } from "./deduplication";
+import { clusterArticle } from "./stories/clustering";
 
 export interface IngestionStats {
   provider: string;
@@ -337,12 +338,21 @@ export async function persistArticles(
 
       if (recordsToUpsert.length > 0) {
         // Perform batch upsert
-        const { error: upsertErr } = await client
+        const { data: insertedData, error: upsertErr } = await client
           .from("articles")
           .upsert(recordsToUpsert, {
             onConflict: "provider,external_id",
             ignoreDuplicates,
-          });
+          })
+          .select("id, external_id, title, published_at, source_id");
+
+        let insertedRows = (insertedData || []) as Array<{
+          id: string;
+          external_id: string;
+          title: string;
+          published_at: string;
+          source_id: string | null;
+        }>;
 
         if (upsertErr) {
           // If upsert fails because canonical_url / normalized_title column doesn't exist yet
@@ -358,12 +368,13 @@ export async function persistArticles(
               return rest;
             });
 
-            const { error: fallbackErr } = await client
+            const { data: fallbackData, error: fallbackErr } = await client
               .from("articles")
               .upsert(fallbackRecords as InsertArticle[], {
                 onConflict: "provider,external_id",
                 ignoreDuplicates,
-              });
+              })
+              .select("id, external_id, title, published_at, source_id");
 
             if (fallbackErr) {
               const msg = `[Persistence] Batch fallback upsert error for provider "${provider}": ${fallbackErr.message}`;
@@ -371,6 +382,7 @@ export async function persistArticles(
               stats.errors?.push(msg);
               stats.failed += recordsToUpsert.length;
             } else {
+              insertedRows = (fallbackData || []) as typeof insertedRows;
               stats.inserted += newCount;
               if (ignoreDuplicates) {
                 stats.skipped += existingCount;
@@ -390,6 +402,31 @@ export async function persistArticles(
             stats.skipped += existingCount;
           } else {
             stats.updated += existingCount;
+          }
+        }
+
+        // Story clustering: cluster newly inserted articles into stories
+        if (insertedRows && insertedRows.length > 0) {
+          for (const row of insertedRows) {
+            if (!existingExtSet.has(row.external_id)) {
+              try {
+                await clusterArticle(
+                  {
+                    id: row.id,
+                    title: row.title,
+                    publishedAt: new Date(row.published_at),
+                    sourceId: row.source_id,
+                  },
+                  { client }
+                );
+              } catch (clusterErr) {
+                // Non-fatal: do not abort article persistence if story clustering table is pending migration
+                console.warn(
+                  `[Persistence] Story clustering notice for article "${row.title}":`,
+                  clusterErr
+                );
+              }
+            }
           }
         }
       } else {

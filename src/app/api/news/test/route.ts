@@ -36,13 +36,18 @@ export async function GET(request: Request) {
     console.log(
       `[${provider.name.toUpperCase()} Ingestion Test] Query: "${query}" | Fetched: ${result.stats.fetched} | Inserted: ${result.stats.inserted} | Updated: ${result.stats.updated} | Skipped: ${result.stats.skipped} | Failed: ${result.stats.failed}`
     );
+    if (result.stats.errors && result.stats.errors.length > 0) {
+      console.error(`[${provider.name.toUpperCase()} Ingestion Errors]:`, result.stats.errors);
+    }
     console.log(
       `Timings: Fetch: ${result.timings.fetchDurationMs}ms | Persist: ${result.timings.persistDurationMs}ms | Total: ${result.timings.totalDurationMs}ms`
     );
     console.log(`========================================`);
 
+    const hasFailures = result.stats.failed > 0 || (result.stats.errors && result.stats.errors.length > 0);
+
     return NextResponse.json({
-      success: true,
+      success: !hasFailures,
       provider: result.provider,
       query,
       fetched: result.stats.fetched,
@@ -50,6 +55,7 @@ export async function GET(request: Request) {
       updated: result.stats.updated,
       skipped: result.stats.skipped,
       failed: result.stats.failed,
+      errors: result.stats.errors || [],
       timings: result.timings,
       sampleArticles: result.articles.slice(0, 5).map((a) => ({
         title: a.title,
@@ -58,7 +64,7 @@ export async function GET(request: Request) {
         source: a.source.name,
         publishedAt: a.publishedAt.toISOString(),
       })),
-    });
+    }, { status: hasFailures ? 502 : 200 });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("[News Ingestion Test Endpoint] Error:", message);

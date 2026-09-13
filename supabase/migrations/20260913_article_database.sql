@@ -91,7 +91,17 @@ execute function public.handle_updated_at();
 alter table public.sources enable row level security;
 alter table public.articles enable row level security;
 
+-- 6. Expose tables to Data API and Service Role
+grant usage on schema public to postgres, anon, authenticated, service_role;
+grant all on table public.sources to postgres, service_role;
+grant all on table public.articles to postgres, service_role;
+grant select on table public.sources to anon, authenticated;
+grant select on table public.articles to anon, authenticated;
+
 -- RLS Security Rule:
 -- Neither anonymous nor normal authenticated users are granted insert, update, or delete.
 -- The ingestion worker writes these records server-side via service role / direct backend authority.
--- No broad public read policies are created at this stage (to be defined when feed is implemented).
+
+-- 7. Force PostgREST schema cache reload
+notify pgrst, 'reload schema';
+

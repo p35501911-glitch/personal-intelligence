@@ -87,6 +87,33 @@ function createTestDatabase() {
     create index articles_fetched_at_idx on public.articles(fetched_at desc);
     create index articles_canonical_url_idx on public.articles(canonical_url);
     create index articles_normalized_title_idx on public.articles(normalized_title);
+
+    create table public.stories (
+      id uuid primary key default gen_random_uuid(),
+      canonical_title text not null,
+      summary text,
+      first_published_at timestamptz not null,
+      latest_published_at timestamptz not null,
+      article_count integer not null default 1,
+      source_count integer not null default 1,
+      importance_score numeric,
+      status text not null default 'active',
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+
+    create table public.story_articles (
+      story_id uuid not null references public.stories(id) on delete cascade,
+      article_id uuid not null references public.articles(id) on delete cascade,
+      created_at timestamptz not null default now(),
+      primary key (story_id, article_id)
+    );
+
+    create index stories_first_published_at_idx on public.stories(first_published_at desc);
+    create index stories_latest_published_at_idx on public.stories(latest_published_at desc);
+    create index stories_status_idx on public.stories(status);
+    create index story_articles_story_id_idx on public.story_articles(story_id);
+    create index story_articles_article_id_idx on public.story_articles(article_id);
   `);
 
   return db;
@@ -320,3 +347,142 @@ test("Test 8 — RLS: Verify that migration enables RLS and prevents unauthentic
     "Both tables must enforce unique(provider, external_id)"
   );
 });
+
+test("Test 9 — Story & Junction insertion: Stories and story_articles can be created and linked", () => {
+  const db = createTestDatabase();
+
+  const article = db.public.one(`
+    insert into public.articles (provider, external_id, title, url, published_at)
+    values ('rss', 'art-001', 'Major Tech Breakthrough', 'https://example.com/tech1', '2026-09-13T10:00:00Z')
+    returning id, title;
+  `) as unknown as { id: string; title: string };
+
+  const story = db.public.one(`
+    insert into public.stories (
+      canonical_title,
+      first_published_at,
+      latest_published_at,
+      article_count,
+      source_count
+    )
+    values (
+      '${article.title}',
+      '2026-09-13T10:00:00Z',
+      '2026-09-13T10:00:00Z',
+      1,
+      1
+    )
+    returning *;
+  `) as unknown as { id: string; canonical_title: string; article_count: number };
+
+  assert.ok(story.id);
+  assert.equal(story.canonical_title, article.title);
+  assert.equal(story.article_count, 1);
+
+  const link = db.public.one(`
+    insert into public.story_articles (story_id, article_id)
+    values ('${story.id}', '${article.id}')
+    returning *;
+  `) as unknown as { story_id: string; article_id: string };
+
+  assert.equal(link.story_id, story.id);
+  assert.equal(link.article_id, article.id);
+
+  // Duplicate link attempt must fail due to composite primary key
+  assert.throws(
+    () => {
+      db.public.none(`
+        insert into public.story_articles (story_id, article_id)
+        values ('${story.id}', '${article.id}');
+      `);
+    },
+    /unique|primary/i,
+    "Expected primary key violation on duplicate (story_id, article_id)"
+  );
+});
+
+test("Test 10 — Story deletion does not delete attached articles", () => {
+  const db = createTestDatabase();
+
+  const article = db.public.one(`
+    insert into public.articles (provider, external_id, title, url, published_at)
+    values ('rss', 'art-preserve-01', 'Article To Preserve', 'https://example.com/preserve', now())
+    returning id;
+  `) as unknown as { id: string };
+
+  const story = db.public.one(`
+    insert into public.stories (canonical_title, first_published_at, latest_published_at)
+    values ('Article To Preserve', now(), now())
+    returning id;
+  `) as unknown as { id: string };
+
+  db.public.none(`
+    insert into public.story_articles (story_id, article_id)
+    values ('${story.id}', '${article.id}');
+  `);
+
+  // Delete the story
+  db.public.none(`delete from public.stories where id = '${story.id}';`);
+
+  // Verify article still exists
+  const articleAfter = db.public.one(`
+    select id, title from public.articles where id = '${article.id}';
+  `) as unknown as { id: string; title: string };
+  assert.ok(articleAfter, "Article must remain intact when story is deleted");
+
+  // Verify junction row was cascade deleted
+  const linkAfter = db.public.many(`
+    select * from public.story_articles where story_id = '${story.id}';
+  `);
+  assert.equal(linkAfter.length, 0, "Junction rows must be cascade deleted when story is deleted");
+});
+
+test("Test 11 — Article deletion removes relationship safely without deleting story", () => {
+  const db = createTestDatabase();
+
+  const article1 = db.public.one(`
+    insert into public.articles (provider, external_id, title, url, published_at)
+    values ('rss', 'art-del-01', 'Article To Delete', 'https://example.com/del1', now())
+    returning id;
+  `) as unknown as { id: string };
+
+  const article2 = db.public.one(`
+    insert into public.articles (provider, external_id, title, url, published_at)
+    values ('rss', 'art-keep-02', 'Article To Keep', 'https://example.com/keep2', now())
+    returning id;
+  `) as unknown as { id: string };
+
+  const story = db.public.one(`
+    insert into public.stories (canonical_title, first_published_at, latest_published_at, article_count)
+    values ('Shared Story', now(), now(), 2)
+    returning id;
+  `) as unknown as { id: string };
+
+  db.public.none(`
+    insert into public.story_articles (story_id, article_id)
+    values ('${story.id}', '${article1.id}'), ('${story.id}', '${article2.id}');
+  `);
+
+  // Delete article1
+  db.public.none(`delete from public.articles where id = '${article1.id}';`);
+
+  // Story must still exist
+  const storyAfter = db.public.one(`
+    select id, canonical_title from public.stories where id = '${story.id}';
+  `) as unknown as { id: string };
+  assert.ok(storyAfter, "Story must remain intact when one article is deleted");
+
+  // Article2 must still exist
+  const article2After = db.public.one(`
+    select id from public.articles where id = '${article2.id}';
+  `) as unknown as { id: string };
+  assert.ok(article2After, "Other article must remain intact");
+
+  // Junction row for article1 deleted, article2 still linked
+  const remainingLinks = db.public.many(`
+    select article_id from public.story_articles where story_id = '${story.id}';
+  `) as unknown as { article_id: string }[];
+  assert.equal(remainingLinks.length, 1);
+  assert.equal(remainingLinks[0].article_id, article2.id);
+});
+

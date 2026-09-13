@@ -189,6 +189,66 @@ export interface Database {
         };
         Relationships: [];
       };
+      stories: {
+        Row: {
+          id: string;
+          canonical_title: string;
+          summary: string | null;
+          first_published_at: string;
+          latest_published_at: string;
+          article_count: number;
+          source_count: number;
+          importance_score: number | null;
+          status: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          canonical_title: string;
+          summary?: string | null;
+          first_published_at: string;
+          latest_published_at: string;
+          article_count?: number;
+          source_count?: number;
+          importance_score?: number | null;
+          status?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          canonical_title?: string;
+          summary?: string | null;
+          first_published_at?: string;
+          latest_published_at?: string;
+          article_count?: number;
+          source_count?: number;
+          importance_score?: number | null;
+          status?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      story_articles: {
+        Row: {
+          story_id: string;
+          article_id: string;
+          created_at: string;
+        };
+        Insert: {
+          story_id: string;
+          article_id: string;
+          created_at?: string;
+        };
+        Update: {
+          story_id?: string;
+          article_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -212,3 +272,11 @@ export type UpdateSource = Database["public"]["Tables"]["sources"]["Update"];
 export type ArticleRow = Database["public"]["Tables"]["articles"]["Row"];
 export type InsertArticle = Database["public"]["Tables"]["articles"]["Insert"];
 export type UpdateArticle = Database["public"]["Tables"]["articles"]["Update"];
+
+export type StoryRow = Database["public"]["Tables"]["stories"]["Row"];
+export type InsertStory = Database["public"]["Tables"]["stories"]["Insert"];
+export type UpdateStory = Database["public"]["Tables"]["stories"]["Update"];
+
+export type StoryArticleRow = Database["public"]["Tables"]["story_articles"]["Row"];
+export type InsertStoryArticle = Database["public"]["Tables"]["story_articles"]["Insert"];
+export type UpdateStoryArticle = Database["public"]["Tables"]["story_articles"]["Update"];

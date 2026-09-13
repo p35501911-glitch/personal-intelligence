@@ -50,7 +50,7 @@ const COMMON_STOP_WORDS = new Set([
   "is", "are", "was", "were", "be", "been", "being", "have", "has", "had",
   "do", "does", "did", "will", "would", "shall", "should", "can", "could",
   "may", "might", "must", "it", "its", "this", "that", "these", "those",
-  "as", "if", "when", "than", "so", "no", "not", "new", "says"
+  "as", "if", "when", "than", "so", "no", "not", "new", "latest", "newest", "says"
 ]);
 
 export function extractTitleTokens(normalizedTitle: string): Set<string> {

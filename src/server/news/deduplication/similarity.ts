@@ -65,9 +65,38 @@ const ACRONYM_EXPANSIONS: Record<string, string[]> = {
   ev: ["electric", "vehicle", "vehicles"],
 };
 
+const HEADLINE_SYNONYMS: Record<string, string> = {
+  // Verbs of announcing/launching/unveiling
+  unveil: "announce",
+  unveils: "announce",
+  unveiled: "announce",
+  launch: "announce",
+  launches: "announce",
+  launched: "announce",
+  release: "announce",
+  releases: "announce",
+  released: "announce",
+  introduce: "announce",
+  introduces: "announce",
+  introduced: "announce",
+  reveal: "announce",
+  reveals: "announce",
+  revealed: "announce",
+  debut: "announce",
+  debuts: "announce",
+  debuted: "announce",
+  announces: "announce",
+  announced: "announce",
+
+  // Nouns for technology systems/models
+  system: "model",
+  systems: "model",
+  models: "model",
+};
+
 /**
  * Computes Jaccard and Overlap token similarity between two token sets,
- * accounting for standard acronym expansions (e.g. AI <-> artificial intelligence).
+ * accounting for standard acronym expansions and headline synonyms.
  */
 export function computeTokenSimilarity(tokensA: Set<string>, tokensB: Set<string>): {
   jaccard: number;
@@ -77,9 +106,16 @@ export function computeTokenSimilarity(tokensA: Set<string>, tokensB: Set<string
     return { jaccard: 0, overlap: 0 };
   }
 
-  // Work with copies to check acronym matches
-  const setA = new Set(tokensA);
-  const setB = new Set(tokensB);
+  // Work with copies and apply canonical headline synonyms
+  const setA = new Set<string>();
+  for (const t of tokensA) {
+    setA.add(HEADLINE_SYNONYMS[t] || t);
+  }
+
+  const setB = new Set<string>();
+  for (const t of tokensB) {
+    setB.add(HEADLINE_SYNONYMS[t] || t);
+  }
 
   // Check acronym expansions from A into B
   for (const [acronym, expandedWords] of Object.entries(ACRONYM_EXPANSIONS)) {
