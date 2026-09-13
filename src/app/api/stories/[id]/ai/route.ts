@@ -70,6 +70,7 @@ export async function GET(
         opportunities: Array.isArray(intel.opportunities) ? intel.opportunities : [],
         risks: Array.isArray(intel.risks) ? intel.risks : [],
         model: intel.model,
+        tier: (intel.tier as "normal" | "important") || "normal",
         promptVersion: intel.prompt_version,
         generatedAt: intel.generated_at,
       },

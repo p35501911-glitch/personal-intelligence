@@ -2,6 +2,7 @@ import { Type, type GoogleGenAI } from "@google/genai";
 import { getGeminiClient, getGeminiConfig } from "./client";
 import { buildStoryPrompt, GEMINI_SYSTEM_INSTRUCTION } from "./prompts";
 import {
+  deepStoryIntelligenceSchema,
   storyIntelligenceSchema,
   type StoryIntelligenceData,
   type StoryInputForAI,
@@ -43,48 +44,44 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Structured response schema for Gemini SDK.
+ * Structured response schema for deep Flash model analysis.
  */
-const GEMINI_RESPONSE_SCHEMA = {
+const DEEP_FLASH_RESPONSE_SCHEMA = {
   type: Type.OBJECT,
   properties: {
-    summary: {
+    executiveSummary: {
       type: Type.STRING,
-      description: "Concise executive summary of the story event (2 to 4 sentences).",
+      description: "Concise, factual executive summary of the story event (2 to 4 sentences).",
     },
-    keyPoints: {
+    keyTakeaways: {
       type: Type.ARRAY,
       items: { type: Type.STRING },
-      description: "2 to 5 crucial facts or key takeaways.",
+      description: "3 to 5 crucial facts or key takeaways.",
     },
     whyItMatters: {
       type: Type.STRING,
-      description: "Why this event matters strategically or economically (1 to 2 sentences).",
+      description: "Why this event matters strategically, technologically, or economically (1 to 2 sentences).",
     },
     opportunities: {
       type: Type.ARRAY,
       items: { type: Type.STRING },
-      description: "1 to 3 potential opportunities created by this development.",
+      description: "1 to 3 potential opportunities created by this development (or empty array if not applicable).",
     },
     risks: {
       type: Type.ARRAY,
       items: { type: Type.STRING },
-      description: "1 to 3 potential risks or uncertainties to watch.",
+      description: "1 to 3 potential risks or uncertainties to watch (or empty array if not applicable).",
     },
   },
-  required: ["summary", "keyPoints", "whyItMatters", "opportunities", "risks"],
+  required: ["executiveSummary", "keyTakeaways", "whyItMatters", "opportunities", "risks"],
 };
 
 /**
- * Generates structured intelligence for a news story using Google Gemini.
+ * Generates deep strategic intelligence for an Important story using the Flash model.
  *
- * Features:
- * - Structured JSON schema enforcement with Zod validation.
- * - 429 Rate-limit detection and exponential backoff.
- * - Timeout protection.
- * - Fault tolerance (never crashes the caller).
+ * Called ONLY for stories meeting the importance threshold (>= 0.7).
  */
-export async function generateStoryIntelligence(
+export async function generateImportantStoryIntelligence(
   story: StoryInputForAI,
   options?: {
     client?: GoogleGenAI | null;
@@ -95,7 +92,7 @@ export async function generateStoryIntelligence(
 ): Promise<GenerationResult> {
   const startTime = Date.now();
   const config = getGeminiConfig();
-  const model = options?.model || config.model;
+  const model = options?.model || config.flashModel;
   const maxRetries = options?.maxRetries ?? config.maxRetries;
   const timeoutMs = options?.timeoutMs ?? config.timeoutMs;
 
@@ -117,62 +114,83 @@ export async function generateStoryIntelligence(
   while (attempt <= maxRetries) {
     attempt++;
     try {
-      // Execute generateContent with timeout race
       const generatePromise = client.models.generateContent({
         model,
         contents: promptText,
         config: {
           systemInstruction: GEMINI_SYSTEM_INSTRUCTION,
           responseMimeType: "application/json",
-          responseJsonSchema: GEMINI_RESPONSE_SCHEMA,
-          temperature: 0.2, // Low temperature for deterministic, factual intelligence
+          responseJsonSchema: DEEP_FLASH_RESPONSE_SCHEMA,
+          temperature: 0.2, // Low temperature for deterministic, grounded intelligence
         },
       });
 
       const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Gemini request timed out after ${timeoutMs}ms`)), timeoutMs)
+        setTimeout(() => reject(new Error(`Flash request timed out after ${timeoutMs}ms`)), timeoutMs)
       );
 
       const response = await Promise.race([generatePromise, timeoutPromise]);
       const rawText = response.text?.trim() || "";
 
       if (!rawText) {
-        throw new Error("Empty response returned from Gemini model");
+        throw new Error("Empty response returned from Flash model");
       }
 
-      // Parse and validate structured output with Zod
       let parsedJson: unknown;
       try {
         parsedJson = JSON.parse(rawText);
       } catch (jsonErr) {
-        throw new Error(`Failed to parse Gemini JSON output: ${jsonErr instanceof Error ? jsonErr.message : String(jsonErr)}`);
+        throw new Error(`Failed to parse Flash JSON output: ${jsonErr instanceof Error ? jsonErr.message : String(jsonErr)}`);
       }
 
-      const validation = storyIntelligenceSchema.safeParse(parsedJson);
-      if (!validation.success) {
-        const issues = validation.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
-        throw new Error(`Invalid intelligence schema: ${issues}`);
+      // Check deep schema
+      const deepValidation = deepStoryIntelligenceSchema.safeParse(parsedJson);
+      if (deepValidation.success) {
+        const d = deepValidation.data;
+        const normalizedData: StoryIntelligenceData = {
+          tier: "important",
+          summary: d.executiveSummary,
+          keyPoints: d.keyTakeaways,
+          whyItMatters: d.whyItMatters,
+          opportunities: d.opportunities,
+          risks: d.risks,
+        };
+        return {
+          success: true,
+          data: normalizedData,
+          model,
+          durationMs: Date.now() - startTime,
+        };
       }
 
-      return {
-        success: true,
-        data: validation.data,
-        model,
-        durationMs: Date.now() - startTime,
-      };
+      // Fallback check on standard storyIntelligenceSchema
+      const standardValidation = storyIntelligenceSchema.safeParse(parsedJson);
+      if (standardValidation.success) {
+        return {
+          success: true,
+          data: {
+            ...standardValidation.data,
+            tier: "important",
+          },
+          model,
+          durationMs: Date.now() - startTime,
+        };
+      }
+
+      const issues = deepValidation.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+      throw new Error(`Invalid intelligence schema: ${issues}`);
     } catch (err: unknown) {
       lastError = err instanceof Error ? err : new Error(String(err));
       isRateLimited = isRateLimitError(lastError);
 
       if (isRateLimited) {
-        console.warn(`[Gemini] Rate limit encountered for story "${story.canonicalTitle}" (attempt ${attempt}/${maxRetries + 1}).`);
+        console.warn(`[Flash] Rate limit encountered for story "${story.canonicalTitle}" (attempt ${attempt}/${maxRetries + 1}).`);
       } else {
-        console.warn(`[Gemini] Error generating intelligence for story "${story.canonicalTitle}" (attempt ${attempt}/${maxRetries + 1}): ${lastError.message}`);
+        console.warn(`[Flash] Error generating intelligence for story "${story.canonicalTitle}" (attempt ${attempt}/${maxRetries + 1}): ${lastError.message}`);
       }
 
       if (attempt <= maxRetries) {
-        // Backoff: on 429 wait 4s, otherwise wait 1.5s
-        const backoffMs = isRateLimited ? 4000 * Math.pow(1.5, attempt - 1) : 1500;
+        const backoffMs = isRateLimited ? 4000 : 1500;
         await sleep(backoffMs);
       }
     }
@@ -180,9 +198,24 @@ export async function generateStoryIntelligence(
 
   return {
     success: false,
-    error: lastError?.message || "Generation failed",
+    error: lastError?.message || "Flash generation failed",
     isRateLimited,
     model,
     durationMs: Date.now() - startTime,
   };
+}
+
+/**
+ * Standard entry point for story intelligence generation.
+ */
+export async function generateStoryIntelligence(
+  story: StoryInputForAI,
+  options?: {
+    client?: GoogleGenAI | null;
+    model?: string;
+    maxRetries?: number;
+    timeoutMs?: number;
+  }
+): Promise<GenerationResult> {
+  return generateImportantStoryIntelligence(story, options);
 }

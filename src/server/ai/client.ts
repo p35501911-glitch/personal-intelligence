@@ -5,24 +5,61 @@ let cachedClient: GoogleGenAI | null = null;
 let clientApiKey: string | null = null;
 
 /**
- * Validates and retrieves current Gemini engine configuration from environment.
- * Default model: 'gemini-3.6-flash' (High quality, free-tier supported: 15 RPM, 1M TPM, 1,500 RPD).
+ * Returns the configured Flash-Lite model (default: 'gemini-flash-lite-latest').
+ */
+export function getFlashLiteModel(): string {
+  return process.env.GEMINI_FLASH_LITE_MODEL?.trim() || "gemini-flash-lite-latest";
+}
+
+/**
+ * Returns the configured Flash model (default: 'gemini-flash-latest').
+ */
+export function getFlashModel(): string {
+  return process.env.GEMINI_FLASH_MODEL?.trim() || "gemini-flash-latest";
+}
+
+/**
+ * Returns whether AI processing is globally enabled (default: true).
+ */
+export function isAiEnabled(): boolean {
+  return process.env.AI_ENABLED !== "false";
+}
+
+/**
+ * Returns the score threshold separating Normal vs Important stories (default: 0.7).
+ */
+export function getAiImportantThreshold(): number {
+  const parsed = Number(process.env.AI_IMPORTANT_THRESHOLD);
+  return !isNaN(parsed) && parsed >= 0 && parsed <= 1 ? parsed : 0.7;
+}
+
+/**
+ * Validates and retrieves the full Gemini engine configuration from the server environment.
  */
 export function getGeminiConfig(): GeminiEngineConfig {
   const apiKey = process.env.GEMINI_API_KEY?.trim() || undefined;
-  const model = process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flash";
-  const promptVersion = Number(process.env.AI_PROMPT_VERSION) || 1;
-  const batchSize = Math.max(1, Math.min(20, Number(process.env.GEMINI_BATCH_SIZE) || 5));
+  const flashLiteModel = getFlashLiteModel();
+  const flashModel = getFlashModel();
+  const importantThreshold = getAiImportantThreshold();
+  const promptVersion = Number(process.env.AI_PROMPT_VERSION) || 2;
+  const batchSize = Math.max(1, Math.min(20, Number(process.env.AI_BATCH_SIZE) || Number(process.env.GEMINI_BATCH_SIZE) || 10));
+  const concurrency = Math.max(1, Math.min(5, Number(process.env.AI_CONCURRENCY) || 2));
   const timeoutMs = Math.max(3000, Number(process.env.GEMINI_TIMEOUT_MS) || 20000);
-  const maxRetries = Math.max(0, Math.min(3, Number(process.env.GEMINI_MAX_RETRIES) || 2));
+  const maxRetries = Math.max(0, Math.min(3, Number(process.env.AI_MAX_RETRIES) || 1));
+  const enabled = isAiEnabled();
 
   return {
     apiKey,
-    model,
+    flashLiteModel,
+    flashModel,
+    importantThreshold,
     promptVersion,
     batchSize,
+    concurrency,
     timeoutMs,
     maxRetries,
+    enabled,
+    model: flashModel, // compatibility fallback
   };
 }
 
@@ -55,6 +92,17 @@ export function getGeminiClient(customApiKey?: string): GoogleGenAI | null {
   cachedClient = new GoogleGenAI({ apiKey: activeKey });
   clientApiKey = activeKey;
   return cachedClient;
+}
+
+/**
+ * Returns the Google Gen AI client or throws an explicit error if missing when AI is enabled.
+ */
+export function requireGeminiClient(): GoogleGenAI {
+  const client = getGeminiClient();
+  if (!client) {
+    throw new Error("GEMINI_API_KEY is missing or invalid in server environment.");
+  }
+  return client;
 }
 
 /**

@@ -303,6 +303,7 @@ export interface Database {
           story_id: string;
           model: string;
           prompt_version: number;
+          tier: "normal" | "important";
           summary: string;
           key_points: Json;
           why_it_matters: string;
@@ -320,9 +321,10 @@ export interface Database {
           story_id: string;
           model?: string;
           prompt_version?: number;
+          tier?: "normal" | "important";
           summary: string;
           key_points?: Json;
-          why_it_matters: string;
+          why_it_matters?: string;
           opportunities?: Json;
           risks?: Json;
           status?: string;
@@ -337,6 +339,7 @@ export interface Database {
           story_id?: string;
           model?: string;
           prompt_version?: number;
+          tier?: "normal" | "important";
           summary?: string;
           key_points?: Json;
           why_it_matters?: string;

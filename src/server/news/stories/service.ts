@@ -491,6 +491,7 @@ export interface StoryIntelligenceDetail {
   opportunities: string[];
   risks: string[];
   model: string;
+  tier?: "normal" | "important";
   generatedAt: string;
 }
 
@@ -668,10 +669,11 @@ export async function getStoryDetails(
       intelligence = {
         summary: intelRow.summary,
         keyPoints: Array.isArray(intelRow.key_points) ? (intelRow.key_points as string[]) : [],
-        whyItMatters: intelRow.why_it_matters,
+        whyItMatters: intelRow.why_it_matters || "",
         opportunities: Array.isArray(intelRow.opportunities) ? (intelRow.opportunities as string[]) : [],
         risks: Array.isArray(intelRow.risks) ? (intelRow.risks as string[]) : [],
         model: intelRow.model,
+        tier: (intelRow.tier as "normal" | "important") || "normal",
         generatedAt: intelRow.generated_at,
       };
     }
