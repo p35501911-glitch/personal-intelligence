@@ -3,7 +3,22 @@
 import React, { useEffect, useState } from 'react';
 import { PersonalizedStoryItem } from '@/server/news/relevance';
 import type { StoryDetails } from '@/server/news/stories';
-import { X, ExternalLink, Clock, Layers, Globe, Calendar, Loader2, AlertCircle } from 'lucide-react';
+import {
+  X,
+  ExternalLink,
+  Clock,
+  Layers,
+  Globe,
+  Calendar,
+  Loader2,
+  AlertCircle,
+  Sparkles,
+  CheckCircle2,
+  TrendingUp,
+  AlertTriangle,
+  Brain,
+  Lightbulb,
+} from 'lucide-react';
 
 interface StoryDetailModalProps {
   story: PersonalizedStoryItem | null;
@@ -201,6 +216,124 @@ export function StoryDetailModal({ story, isOpen, onClose }: StoryDetailModalPro
             <div className="p-4 rounded-xl bg-indigo-950/20 border border-indigo-500/20 text-indigo-200/90 text-sm leading-relaxed">
               <strong className="text-indigo-300 block mb-1">Story Synopsis</strong>
               {story.summary}
+            </div>
+          )}
+
+          {/* AI Intelligence Analysis Section */}
+          {details?.intelligence ? (
+            <div className="rounded-2xl bg-gradient-to-b from-indigo-950/40 via-slate-900/90 to-slate-950/90 border border-indigo-500/30 p-5 space-y-4 shadow-xl relative overflow-hidden">
+              {/* Header Badge */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-500/20 pb-3">
+                <div className="flex items-center space-x-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-600/30 border border-indigo-400/40 flex items-center justify-center text-indigo-300 shadow-inner">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center space-x-2">
+                      <span>AI Intelligence Synthesis</span>
+                      <span className="px-2 py-0.5 text-[10px] font-semibold rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                        {details.intelligence.model}
+                      </span>
+                    </h3>
+                  </div>
+                </div>
+                <span className="text-[11px] text-slate-400">
+                  Synthesized {formatDetailTime(details.intelligence.generatedAt)}
+                </span>
+              </div>
+
+              {/* Executive Summary */}
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-300 mb-1.5 flex items-center space-x-1.5">
+                  <Brain className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Executive Summary</span>
+                </h4>
+                <p className="text-sm text-slate-200 leading-relaxed bg-slate-950/50 p-3.5 rounded-xl border border-slate-800/80">
+                  {details.intelligence.summary}
+                </p>
+              </div>
+
+              {/* Key Takeaways */}
+              {details.intelligence.keyPoints && details.intelligence.keyPoints.length > 0 && (
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-300 mb-2 flex items-center space-x-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Key Takeaways</span>
+                  </h4>
+                  <ul className="space-y-1.5 bg-slate-950/40 p-3.5 rounded-xl border border-slate-800/60">
+                    {details.intelligence.keyPoints.map((point, idx) => (
+                      <li key={idx} className="text-xs sm:text-sm text-slate-300 flex items-start space-x-2">
+                        <span className="text-indigo-400 font-bold shrink-0 mt-0.5">•</span>
+                        <span>{point}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Why It Matters */}
+              {details.intelligence.whyItMatters && (
+                <div className="p-3.5 rounded-xl bg-indigo-950/30 border border-indigo-500/20">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-300 mb-1 flex items-center space-x-1.5">
+                    <Lightbulb className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Why It Matters</span>
+                  </h4>
+                  <p className="text-xs sm:text-sm text-indigo-100/90 leading-relaxed">
+                    {details.intelligence.whyItMatters}
+                  </p>
+                </div>
+              )}
+
+              {/* Opportunities & Risks 2-column grid */}
+              {((details.intelligence.opportunities && details.intelligence.opportunities.length > 0) ||
+                (details.intelligence.risks && details.intelligence.risks.length > 0)) && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                  {/* Opportunities */}
+                  {details.intelligence.opportunities && details.intelligence.opportunities.length > 0 && (
+                    <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/20">
+                      <h5 className="text-xs font-bold text-emerald-400 mb-2 flex items-center space-x-1.5">
+                        <TrendingUp className="w-3.5 h-3.5" />
+                        <span>Opportunities</span>
+                      </h5>
+                      <ul className="space-y-1.5 text-xs text-slate-300">
+                        {details.intelligence.opportunities.map((opp, idx) => (
+                          <li key={idx} className="flex items-start space-x-1.5">
+                            <span className="text-emerald-400 font-bold shrink-0">+</span>
+                            <span>{opp}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Risks */}
+                  {details.intelligence.risks && details.intelligence.risks.length > 0 && (
+                    <div className="p-3.5 rounded-xl bg-rose-950/20 border border-rose-500/20">
+                      <h5 className="text-xs font-bold text-rose-400 mb-2 flex items-center space-x-1.5">
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        <span>Risks & Considerations</span>
+                      </h5>
+                      <ul className="space-y-1.5 text-xs text-slate-300">
+                        {details.intelligence.risks.map((risk, idx) => (
+                          <li key={idx} className="flex items-start space-x-1.5">
+                            <span className="text-rose-400 font-bold shrink-0">!</span>
+                            <span>{risk}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : !isLoading && (
+            /* Fallback indicator when intelligence has not completed */
+            <div className="p-3.5 rounded-xl bg-slate-950/40 border border-slate-800 text-xs text-slate-500 flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <Sparkles className="w-3.5 h-3.5 text-slate-600" />
+                <span>AI Strategic Synthesis Pending</span>
+              </div>
+              <span className="text-[11px] text-slate-600">Free Tier Background Processing</span>
             </div>
           )}
 

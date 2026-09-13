@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { gdeltNewsProvider, rssNewsProvider } from "../providers";
 import { persistArticles, type IngestionStats } from "../persistence";
 import { getServiceSupabaseClient } from "../../supabase";
+import { processPendingStoryIntelligence, isGeminiConfigured } from "../../ai";
 import type {
   IngestionWorkerOptions,
   IngestionCycleReport,
@@ -215,6 +216,19 @@ export async function runIngestionCycle(
       totalInserted += s.inserted;
       totalSkipped += s.skipped;
       totalFailed += s.failed;
+    }
+
+    // 5b. Shared Gemini AI Intelligence Processing (Non-blocking)
+    try {
+      if (isGeminiConfigured()) {
+        console.log(`[Worker] Running shared Gemini AI intelligence pipeline...`);
+        const aiStats = await processPendingStoryIntelligence({ supabaseClient: client });
+        console.log(
+          `[Worker] Gemini AI processing completed: processed=${aiStats.processed}, succeeded=${aiStats.succeeded}, failed=${aiStats.failed}`
+        );
+      }
+    } catch (aiErr) {
+      console.warn(`[Worker] Gemini AI processing notice:`, aiErr);
     }
 
     const durationMs = Date.now() - startTime;

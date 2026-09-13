@@ -297,6 +297,60 @@ export interface Database {
         };
         Relationships: [];
       };
+      story_intelligence: {
+        Row: {
+          id: string;
+          story_id: string;
+          model: string;
+          prompt_version: number;
+          summary: string;
+          key_points: Json;
+          why_it_matters: string;
+          opportunities: Json;
+          risks: Json;
+          status: string;
+          error_message: string | null;
+          attempts: number;
+          last_attempt_at: string;
+          generated_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          story_id: string;
+          model?: string;
+          prompt_version?: number;
+          summary: string;
+          key_points?: Json;
+          why_it_matters: string;
+          opportunities?: Json;
+          risks?: Json;
+          status?: string;
+          error_message?: string | null;
+          attempts?: number;
+          last_attempt_at?: string;
+          generated_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          story_id?: string;
+          model?: string;
+          prompt_version?: number;
+          summary?: string;
+          key_points?: Json;
+          why_it_matters?: string;
+          opportunities?: Json;
+          risks?: Json;
+          status?: string;
+          error_message?: string | null;
+          attempts?: number;
+          last_attempt_at?: string;
+          generated_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -336,3 +390,7 @@ export type UpdateArticleCategory = Database["public"]["Tables"]["article_catego
 export type StoryCategoryRow = Database["public"]["Tables"]["story_categories"]["Row"];
 export type InsertStoryCategory = Database["public"]["Tables"]["story_categories"]["Insert"];
 export type UpdateStoryCategory = Database["public"]["Tables"]["story_categories"]["Update"];
+
+export type StoryIntelligenceRow = Database["public"]["Tables"]["story_intelligence"]["Row"];
+export type InsertStoryIntelligence = Database["public"]["Tables"]["story_intelligence"]["Insert"];
+export type UpdateStoryIntelligence = Database["public"]["Tables"]["story_intelligence"]["Update"];

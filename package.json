@@ -12,9 +12,11 @@
     "backfill:categories": "tsx scripts/backfill_categories.ts",
     "backfill:importance": "tsx scripts/backfill_importance.ts",
     "ingest": "tsx scripts/run_ingestion.ts",
+    "ai:process": "tsx scripts/run_ai_processing.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {
+    "@google/genai": "^2.22.0",
     "@prisma/client": "^6.19.3",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.116.0",

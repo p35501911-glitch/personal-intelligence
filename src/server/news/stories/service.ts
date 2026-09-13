@@ -484,6 +484,16 @@ export interface StoryCategoryDetail {
   confidence: number;
 }
 
+export interface StoryIntelligenceDetail {
+  summary: string;
+  keyPoints: string[];
+  whyItMatters: string;
+  opportunities: string[];
+  risks: string[];
+  model: string;
+  generatedAt: string;
+}
+
 export interface StoryDetails {
   id: string;
   title: string;
@@ -501,6 +511,7 @@ export interface StoryDetails {
   categories: StoryCategoryDetail[];
   articles: StoryArticleDetail[];
   coverage: StoryArticleDetail[]; // alias for articles
+  intelligence?: StoryIntelligenceDetail | null;
 }
 
 /**
@@ -644,6 +655,30 @@ export async function getStoryDetails(
     else if (impScore >= 0.4) importance = "MEDIUM";
   }
 
+  // 4. Fetch AI intelligence if available
+  let intelligence: StoryIntelligenceDetail | null = null;
+  try {
+    const { data: intelRow } = await client
+      .from("story_intelligence")
+      .select("*")
+      .eq("story_id", storyId)
+      .maybeSingle();
+
+    if (intelRow && intelRow.status === "completed") {
+      intelligence = {
+        summary: intelRow.summary,
+        keyPoints: Array.isArray(intelRow.key_points) ? (intelRow.key_points as string[]) : [],
+        whyItMatters: intelRow.why_it_matters,
+        opportunities: Array.isArray(intelRow.opportunities) ? (intelRow.opportunities as string[]) : [],
+        risks: Array.isArray(intelRow.risks) ? (intelRow.risks as string[]) : [],
+        model: intelRow.model,
+        generatedAt: intelRow.generated_at,
+      };
+    }
+  } catch {
+    // Non-fatal if story_intelligence table is pending migration
+  }
+
   return {
     id: storyRow.id,
     title: storyRow.canonical_title,
@@ -661,5 +696,6 @@ export async function getStoryDetails(
     categories: categoryDetails,
     articles: articleDetails,
     coverage: articleDetails,
+    intelligence,
   };
 }
