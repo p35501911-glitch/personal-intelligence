@@ -271,6 +271,37 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
     executeFetch(nextOffset, true);
   };
 
+  const handleToggleSave = useCallback(async (storyId: string, currentSaved: boolean) => {
+    // Optimistically toggle saved status in stories state
+    setStories((prev) =>
+      prev.map((s) => (s.id === storyId ? { ...s, isSaved: !currentSaved } : s))
+    );
+
+    try {
+      if (currentSaved) {
+        const res = await fetch(`/api/saved-stories/${storyId}`, { method: 'DELETE' });
+        if (!res.ok && res.status !== 404) {
+          throw new Error('Failed to remove saved story');
+        }
+      } else {
+        const res = await fetch('/api/saved-stories', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ storyId }),
+        });
+        if (!res.ok) {
+          throw new Error('Failed to save story');
+        }
+      }
+    } catch (err) {
+      console.warn('Error toggling bookmark, rolling back:', err);
+      // Rollback optimistic update
+      setStories((prev) =>
+        prev.map((s) => (s.id === storyId ? { ...s, isSaved: currentSaved } : s))
+      );
+    }
+  }, []);
+
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header Controls Bar */}
@@ -328,6 +359,7 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
                 key={story.id}
                 story={story}
                 onOpenDetail={(s) => setDetailStory(s)}
+                onToggleSave={handleToggleSave}
               />
             ))}
           </div>

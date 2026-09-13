@@ -354,6 +354,27 @@ export interface Database {
         };
         Relationships: [];
       };
+      user_saved_stories: {
+        Row: {
+          id: string;
+          user_id: string;
+          story_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          story_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          story_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -397,3 +418,7 @@ export type UpdateStoryCategory = Database["public"]["Tables"]["story_categories
 export type StoryIntelligenceRow = Database["public"]["Tables"]["story_intelligence"]["Row"];
 export type InsertStoryIntelligence = Database["public"]["Tables"]["story_intelligence"]["Insert"];
 export type UpdateStoryIntelligence = Database["public"]["Tables"]["story_intelligence"]["Update"];
+
+export type UserSavedStoryRow = Database["public"]["Tables"]["user_saved_stories"]["Row"];
+export type InsertUserSavedStory = Database["public"]["Tables"]["user_saved_stories"]["Insert"];
+export type UpdateUserSavedStory = Database["public"]["Tables"]["user_saved_stories"]["Update"];

@@ -2,11 +2,12 @@
 
 import React from 'react';
 import { PersonalizedStoryItem } from '@/server/news/relevance';
-import { Clock, Layers, Globe, Sparkles } from 'lucide-react';
+import { Clock, Layers, Globe, Sparkles, Bookmark } from 'lucide-react';
 
 interface FeedCardProps {
   story: PersonalizedStoryItem;
   onOpenDetail: (story: PersonalizedStoryItem) => void;
+  onToggleSave?: (storyId: string, currentSaved: boolean, e: React.MouseEvent) => void;
 }
 
 /**
@@ -59,7 +60,7 @@ function getImportanceBadge(level: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW') {
   }
 }
 
-export function FeedCard({ story, onOpenDetail }: FeedCardProps) {
+export function FeedCard({ story, onOpenDetail, onToggleSave }: FeedCardProps) {
   const importanceBadge = getImportanceBadge(story.importance);
   const relativeTime = getRelativeTime(story.latestPublishedAt);
   const intel = story.intelligence;
@@ -100,11 +101,36 @@ export function FeedCard({ story, onOpenDetail }: FeedCardProps) {
             )}
           </div>
 
-          <span
-            className={`px-2 py-0.5 text-[10px] tracking-wide rounded-md border uppercase shrink-0 ${importanceBadge.classes}`}
-          >
-            {importanceBadge.label}
-          </span>
+          <div className="flex items-center space-x-1.5 shrink-0">
+            <span
+              className={`px-2 py-0.5 text-[10px] tracking-wide rounded-md border uppercase ${importanceBadge.classes}`}
+            >
+              {importanceBadge.label}
+            </span>
+
+            {onToggleSave && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleSave(story.id, Boolean(story.isSaved), e);
+                }}
+                className={`p-1 rounded-md border transition-all ${
+                  story.isSaved
+                    ? 'bg-indigo-950/70 border-indigo-500/40 text-indigo-400 hover:bg-indigo-900/60'
+                    : 'bg-slate-800/60 border-slate-700/60 text-slate-400 hover:text-slate-200 hover:border-slate-600'
+                }`}
+                title={story.isSaved ? "Remove saved story" : "Save story"}
+                aria-label={story.isSaved ? "Remove saved story" : "Save story"}
+              >
+                <Bookmark
+                  className={`w-3.5 h-3.5 transition-colors ${
+                    story.isSaved ? 'fill-indigo-400 text-indigo-400' : 'text-slate-400'
+                  }`}
+                />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* AI Tier Distinction Badge */}

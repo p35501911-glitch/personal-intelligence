@@ -17,6 +17,7 @@ export interface PersonalizedStoryItem {
   articleCount: number;
   sourceCount: number;
   importance: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  importanceLevel?: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
   importanceScore: number | null;
   categories: StoryCategoryTag[];
   sources: Array<{ id: string; name: string; url: string | null }>;
@@ -24,6 +25,7 @@ export interface PersonalizedStoryItem {
   relevance: RelevanceScoreResult;
   feedScore: number;
   intelligence?: StoryIntelligenceDetail | null;
+  isSaved?: boolean;
 }
 
 export interface PersonalizedFeedOptions {
@@ -348,6 +350,26 @@ export async function getUserPersonalizedFeed(
     console.warn("[Relevance Service] Non-fatal error fetching story intelligence:", intelErr);
   }
 
+  // 2d. Fetch saved story state if userId is provided
+  const savedStoryIdsSet = new Set<string>();
+  if (userId) {
+    try {
+      const savedQuery = client?.from?.("user_saved_stories");
+      if (savedQuery && typeof savedQuery.select === "function") {
+        const { data: savedRows } = await savedQuery
+          .select("story_id")
+          .eq("user_id", userId)
+          .in("story_id", storyIds);
+
+        for (const row of savedRows || []) {
+          savedStoryIdsSet.add(row.story_id);
+        }
+      }
+    } catch (saveErr) {
+      console.warn("[Relevance Service] Non-fatal error fetching saved stories:", saveErr);
+    }
+  }
+
   // 3. Compute relevance for each candidate story
   const scoredStories: PersonalizedStoryItem[] = [];
 
@@ -408,6 +430,7 @@ export async function getUserPersonalizedFeed(
       relevance,
       feedScore,
       intelligence: intel,
+      isSaved: savedStoryIdsSet.has(storyRow.id),
     });
   }
 
