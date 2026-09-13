@@ -9,6 +9,7 @@
     "start": "next start",
     "lint": "eslint",
     "test": "tsx --test tests/**/*.test.ts",
+    "backfill:categories": "tsx scripts/backfill_categories.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

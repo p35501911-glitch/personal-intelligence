@@ -97,6 +97,53 @@ function createMockSupabase(): SupabaseClient<Database> {
 
   return {
     from: (tableName: string) => {
+      if (tableName === "categories") {
+        return {
+          select: () => Promise.resolve({ data: [], error: null }),
+        };
+      }
+      if (tableName === "article_categories" || tableName === "story_categories") {
+        return {
+          upsert: () => Promise.resolve({ data: null, error: null }),
+          select: () => ({
+            eq: () => Promise.resolve({ data: [], error: null }),
+          }),
+        };
+      }
+      if (tableName === "stories" || tableName === "story_articles") {
+        const chain: Record<string, unknown> = {
+          select: () => chain,
+          eq: () => chain,
+          gte: () => chain,
+          lte: () => chain,
+          order: () => chain,
+          limit: () => Promise.resolve({ data: [], error: null }),
+          insert: (rec: Record<string, unknown>) => ({
+            select: () => ({
+              single: () => Promise.resolve({
+                data: {
+                  id: "mock-story-id",
+                  canonical_title: rec.canonical_title || "Mock Title",
+                  summary: null,
+                  first_published_at: new Date().toISOString(),
+                  latest_published_at: new Date().toISOString(),
+                  article_count: 1,
+                  source_count: 1,
+                  importance_score: null,
+                  status: "active",
+                  created_at: new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                },
+                error: null,
+              }),
+            }),
+          }),
+          maybeSingle: () => Promise.resolve({ data: null, error: null }),
+          single: () => Promise.resolve({ data: null, error: null }),
+        };
+        return chain;
+      }
+
       let selectedFields = "*";
       const eqFilters: Array<{ col: string; val: unknown }> = [];
       const inFilters: Array<{ col: string; vals: unknown[] }> = [];

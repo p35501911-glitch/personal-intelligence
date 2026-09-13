@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { getServiceSupabaseClient } from "../supabase";
+import { getCategorySlugToIdMap } from "./categories/service";
 
 export interface ApiArticle {
   id: string;
@@ -97,6 +98,9 @@ export async function getPersistedArticles(
   // Handle category filtering
   if (categoryId) {
     try {
+      const slugMap = await getCategorySlugToIdMap(client);
+      const targetCategoryId = slugMap.get(categoryId) || categoryId;
+
       type RelationClient = {
         from(table: string): {
           select(columns: string): {
@@ -114,7 +118,7 @@ export async function getPersistedArticles(
       )
         .from("article_categories")
         .select("article_id")
-        .eq("category_id", categoryId);
+        .eq("category_id", targetCategoryId);
 
       if (catErr || !categoryLinks || categoryLinks.length === 0) {
         // Table doesn't exist yet or no matching articles

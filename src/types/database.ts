@@ -249,6 +249,54 @@ export interface Database {
         };
         Relationships: [];
       };
+      article_categories: {
+        Row: {
+          article_id: string;
+          category_id: string;
+          confidence: number;
+          is_primary: boolean;
+          created_at: string;
+        };
+        Insert: {
+          article_id: string;
+          category_id: string;
+          confidence?: number;
+          is_primary?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          article_id?: string;
+          category_id?: string;
+          confidence?: number;
+          is_primary?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      story_categories: {
+        Row: {
+          story_id: string;
+          category_id: string;
+          confidence: number;
+          is_primary: boolean;
+          created_at: string;
+        };
+        Insert: {
+          story_id: string;
+          category_id: string;
+          confidence?: number;
+          is_primary?: boolean;
+          created_at?: string;
+        };
+        Update: {
+          story_id?: string;
+          category_id?: string;
+          confidence?: number;
+          is_primary?: boolean;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;
@@ -280,3 +328,11 @@ export type UpdateStory = Database["public"]["Tables"]["stories"]["Update"];
 export type StoryArticleRow = Database["public"]["Tables"]["story_articles"]["Row"];
 export type InsertStoryArticle = Database["public"]["Tables"]["story_articles"]["Insert"];
 export type UpdateStoryArticle = Database["public"]["Tables"]["story_articles"]["Update"];
+
+export type ArticleCategoryRow = Database["public"]["Tables"]["article_categories"]["Row"];
+export type InsertArticleCategory = Database["public"]["Tables"]["article_categories"]["Insert"];
+export type UpdateArticleCategory = Database["public"]["Tables"]["article_categories"]["Update"];
+
+export type StoryCategoryRow = Database["public"]["Tables"]["story_categories"]["Row"];
+export type InsertStoryCategory = Database["public"]["Tables"]["story_categories"]["Insert"];
+export type UpdateStoryCategory = Database["public"]["Tables"]["story_categories"]["Update"];

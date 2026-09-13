@@ -23,6 +23,11 @@ export const storiesQuerySchema = z.object({
     .min(1, "Status cannot be empty")
     .default("active")
     .optional(),
+  categoryId: z
+    .string()
+    .trim()
+    .min(1, "Category ID cannot be empty")
+    .optional(),
 });
 
 export type StoriesQueryInput = z.infer<typeof storiesQuerySchema>;
@@ -36,6 +41,7 @@ export type StoriesQueryInput = z.infer<typeof storiesQuerySchema>;
  * - limit: number (1-50, default 20)
  * - offset: number (>= 0, default 0)
  * - status: string (default 'active', optional)
+ * - categoryId: string (optional)
  */
 export async function GET(request: Request) {
   try {
@@ -55,6 +61,10 @@ export async function GET(request: Request) {
     if (statusParam !== null && statusParam.trim() !== "") {
       rawParams.status = statusParam.trim();
     }
+    const categoryIdParam = searchParams.get("categoryId");
+    if (categoryIdParam !== null && categoryIdParam.trim() !== "") {
+      rawParams.categoryId = categoryIdParam.trim();
+    }
 
     // Validate parameters with Zod
     const validation = storiesQuerySchema.safeParse(rawParams);
@@ -69,13 +79,14 @@ export async function GET(request: Request) {
       );
     }
 
-    const { limit, offset, status } = validation.data;
+    const { limit, offset, status, categoryId } = validation.data;
 
     // Fetch stories from database
     const result = await getStories({
       limit,
       offset,
       status,
+      categoryId,
     });
 
     return NextResponse.json(

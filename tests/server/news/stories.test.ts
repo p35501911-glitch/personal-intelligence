@@ -62,6 +62,17 @@ test("Step 2H: Stories Query Schema Validation", async (t) => {
     assert.equal(storiesQuerySchema.safeParse({ offset: "0" }).success, true);
     assert.equal(storiesQuerySchema.safeParse({ offset: "100" }).success, true);
   });
+
+  await t.test("accepts optional categoryId parameter", () => {
+    const parsed = storiesQuerySchema.safeParse({ categoryId: "cat-tech" });
+    assert.equal(parsed.success, true);
+    if (parsed.success) {
+      assert.equal(parsed.data.categoryId, "cat-tech");
+    }
+
+    const empty = storiesQuerySchema.safeParse({ categoryId: "" });
+    assert.equal(empty.success, false, "Empty categoryId should fail validation");
+  });
 });
 
 test("Step 2H: Canonical Title Selection", async (t) => {
@@ -397,6 +408,21 @@ function createMockSupabaseClient() {
               },
             };
           },
+        };
+      }
+
+      if (table === "categories") {
+        return {
+          select: () => Promise.resolve({ data: [], error: null }),
+        };
+      }
+
+      if (table === "story_categories") {
+        return {
+          upsert: () => Promise.resolve({ error: null }),
+          select: () => ({
+            eq: () => Promise.resolve({ data: [], error: null }),
+          }),
         };
       }
 

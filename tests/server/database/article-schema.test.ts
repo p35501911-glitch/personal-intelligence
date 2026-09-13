@@ -114,6 +114,47 @@ function createTestDatabase() {
     create index stories_status_idx on public.stories(status);
     create index story_articles_story_id_idx on public.story_articles(story_id);
     create index story_articles_article_id_idx on public.story_articles(article_id);
+
+    create table public.categories (
+      id uuid primary key default gen_random_uuid(),
+      slug text unique not null,
+      name text not null,
+      description text,
+      parent_id uuid references public.categories(id) on delete cascade,
+      level integer not null default 1,
+      display_order integer not null default 0,
+      created_at timestamptz not null default now(),
+      updated_at timestamptz not null default now()
+    );
+
+    create index categories_slug_idx on public.categories(slug);
+    create index categories_parent_id_idx on public.categories(parent_id);
+
+    create table public.article_categories (
+      article_id uuid not null references public.articles(id) on delete cascade,
+      category_id uuid not null references public.categories(id) on delete cascade,
+      confidence numeric not null default 1.0,
+      is_primary boolean not null default false,
+      created_at timestamptz not null default now(),
+      primary key (article_id, category_id)
+    );
+
+    create index article_categories_article_id_idx on public.article_categories(article_id);
+    create index article_categories_category_id_idx on public.article_categories(category_id);
+    create index article_categories_is_primary_idx on public.article_categories(is_primary);
+
+    create table public.story_categories (
+      story_id uuid not null references public.stories(id) on delete cascade,
+      category_id uuid not null references public.categories(id) on delete cascade,
+      confidence numeric not null default 1.0,
+      is_primary boolean not null default false,
+      created_at timestamptz not null default now(),
+      primary key (story_id, category_id)
+    );
+
+    create index story_categories_story_id_idx on public.story_categories(story_id);
+    create index story_categories_category_id_idx on public.story_categories(category_id);
+    create index story_categories_is_primary_idx on public.story_categories(is_primary);
   `);
 
   return db;
@@ -484,5 +525,103 @@ test("Test 11 — Article deletion removes relationship safely without deleting 
   `) as unknown as { article_id: string }[];
   assert.equal(remainingLinks.length, 1);
   assert.equal(remainingLinks[0].article_id, article2.id);
+});
+
+test("Test 12 — Category hierarchy insertion: Root and child categories link correctly", () => {
+  const db = createTestDatabase();
+
+  const rootCat = db.public.one(`
+    insert into public.categories (slug, name, level, display_order)
+    values ('technology', 'Technology', 1, 1)
+    returning *;
+  `) as unknown as { id: string; slug: string; name: string; level: number; parent_id: string | null };
+
+  assert.ok(rootCat.id, "Root category should have UUID");
+  assert.equal(rootCat.slug, "technology");
+  assert.equal(rootCat.level, 1);
+  assert.equal(rootCat.parent_id, null);
+
+  const subCat = db.public.one(`
+    insert into public.categories (slug, name, level, parent_id, display_order)
+    values ('technology-ai', 'Artificial Intelligence', 2, '${rootCat.id}', 1)
+    returning *;
+  `) as unknown as { id: string; slug: string; parent_id: string };
+
+  assert.ok(subCat.id, "Child category should have UUID");
+  assert.equal(subCat.parent_id, rootCat.id, "Child should reference root parent");
+});
+
+test("Test 13 — Article categories junction: Cascade deletion cleans up associations", () => {
+  const db = createTestDatabase();
+
+  const cat = db.public.one(`
+    insert into public.categories (slug, name, level)
+    values ('technology', 'Technology', 1)
+    returning id;
+  `) as unknown as { id: string };
+
+  const article = db.public.one(`
+    insert into public.articles (provider, external_id, title, url, published_at)
+    values ('rss', 'art-cat-01', 'AI Breakthrough Announced', 'https://example.com/ai', now())
+    returning id;
+  `) as unknown as { id: string };
+
+  db.public.none(`
+    insert into public.article_categories (article_id, category_id, confidence, is_primary)
+    values ('${article.id}', '${cat.id}', 0.95, true);
+  `);
+
+  const link = db.public.one(`
+    select * from public.article_categories where article_id = '${article.id}';
+  `) as unknown as { article_id: string; category_id: string; confidence: string; is_primary: boolean };
+
+  assert.ok(link);
+  assert.equal(link.article_id, article.id);
+  assert.equal(link.category_id, cat.id);
+  assert.equal(link.is_primary, true);
+
+  // Delete article -> junction row must cascade delete
+  db.public.none(`delete from public.articles where id = '${article.id}';`);
+
+  const linkAfter = db.public.many(`
+    select * from public.article_categories where article_id = '${article.id}';
+  `);
+  assert.equal(linkAfter.length, 0, "Junction record should cascade delete with article");
+});
+
+test("Test 14 — Story categories junction: Cascade deletion cleans up associations", () => {
+  const db = createTestDatabase();
+
+  const cat = db.public.one(`
+    insert into public.categories (slug, name, level)
+    values ('markets', 'Markets', 1)
+    returning id;
+  `) as unknown as { id: string };
+
+  const story = db.public.one(`
+    insert into public.stories (canonical_title, first_published_at, latest_published_at)
+    values ('Stock Markets Surge Today', now(), now())
+    returning id;
+  `) as unknown as { id: string };
+
+  db.public.none(`
+    insert into public.story_categories (story_id, category_id, confidence, is_primary)
+    values ('${story.id}', '${cat.id}', 0.88, true);
+  `);
+
+  const link = db.public.one(`
+    select * from public.story_categories where story_id = '${story.id}';
+  `) as unknown as { story_id: string; category_id: string; is_primary: boolean };
+
+  assert.ok(link);
+  assert.equal(link.is_primary, true);
+
+  // Delete story -> junction row must cascade delete
+  db.public.none(`delete from public.stories where id = '${story.id}';`);
+
+  const linkAfter = db.public.many(`
+    select * from public.story_categories where story_id = '${story.id}';
+  `);
+  assert.equal(linkAfter.length, 0, "Junction record should cascade delete with story");
 });
 

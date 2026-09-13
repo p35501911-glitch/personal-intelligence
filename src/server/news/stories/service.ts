@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, InsertStory, StoryRow } from "@/types/database";
 import { getServiceSupabaseClient } from "../../supabase";
 import type { Story, StoryCandidate, StoryFetchOptions } from "./types";
+import { categorizeAndTagStory, getCategorySlugToIdMap } from "../categories/service";
 
 /**
  * Selects the best canonical title deterministically between an existing title
@@ -72,6 +73,20 @@ export async function createStory(
 
   if (linkErr) {
     console.error(`[Stories] Error linking article ${article.id} to story ${storyRow.id}:`, linkErr);
+  }
+
+  // Tag story with categories deterministically
+  try {
+    await categorizeAndTagStory(
+      {
+        id: storyRow.id,
+        canonicalTitle: storyRow.canonical_title,
+        summary: storyRow.summary,
+      },
+      client
+    );
+  } catch (catErr) {
+    console.warn(`[Stories] Non-fatal error categorizing story ${storyRow.id}:`, catErr);
   }
 
   return {
@@ -211,6 +226,20 @@ export async function attachArticleToStory(
 
   const updatedRow = updatedStory as StoryRow;
 
+  // Retag or ensure story categories are synchronized
+  try {
+    await categorizeAndTagStory(
+      {
+        id: storyId,
+        canonicalTitle: bestTitle,
+        summary: updatedRow.summary,
+      },
+      client
+    );
+  } catch (catErr) {
+    console.warn(`[Stories] Non-fatal error categorizing story ${storyId}:`, catErr);
+  }
+
   return {
     id: updatedRow.id,
     canonicalTitle: updatedRow.canonical_title,
@@ -267,17 +296,64 @@ export async function getStories(
   options: StoryFetchOptions = {},
   client: SupabaseClient<Database> = getServiceSupabaseClient()
 ): Promise<{ stories: Story[]; count: number; limit: number; offset: number }> {
-  const { limit = 20, offset = 0, status = "active" } = options;
+  const { limit = 20, offset = 0, status = "active", categoryId } = options;
 
   let query = client
     .from("stories")
     .select("*", { count: "exact" })
-    .order("latest_published_at", { ascending: false })
-    .range(offset, offset + limit - 1);
+    .order("latest_published_at", { ascending: false });
 
   if (status) {
     query = query.eq("status", status);
   }
+
+  // Handle category filtering
+  if (categoryId) {
+    try {
+      const slugMap = await getCategorySlugToIdMap(client);
+      const targetCategoryId = slugMap.get(categoryId) || categoryId;
+
+      type RelationClient = {
+        from(table: string): {
+          select(columns: string): {
+            eq(column: string, value: string): Promise<{
+              data: { story_id: string }[] | null;
+              error: { message: string; code?: string } | null;
+            }>;
+          };
+        };
+      };
+
+      const { data: categoryLinks, error: catErr } = await (
+        client as unknown as RelationClient
+      )
+        .from("story_categories")
+        .select("story_id")
+        .eq("category_id", targetCategoryId);
+
+      if (catErr || !categoryLinks || categoryLinks.length === 0) {
+        return {
+          stories: [],
+          limit,
+          count: 0,
+          offset,
+        };
+      }
+
+      const storyIds = categoryLinks.map((link: { story_id: string }) => link.story_id);
+      query = query.in("id", storyIds);
+    } catch {
+      return {
+        stories: [],
+        limit,
+        count: 0,
+        offset,
+      };
+    }
+  }
+
+  // Apply pagination
+  query = query.range(offset, offset + limit - 1);
 
   const { data, count, error } = await query;
 

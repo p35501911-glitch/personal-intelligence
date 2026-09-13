@@ -4,6 +4,7 @@ import type { NormalizedArticle } from "./types";
 import { getServiceSupabaseClient } from "../supabase";
 import { canonicalizeUrl, normalizeTitle } from "./deduplication";
 import { clusterArticle } from "./stories/clustering";
+import { categorizeAndTagArticle } from "./categories";
 
 export interface IngestionStats {
   provider: string;
@@ -405,10 +406,11 @@ export async function persistArticles(
           }
         }
 
-        // Story clustering: cluster newly inserted articles into stories
+        // Story clustering & Category matching for newly inserted articles
         if (insertedRows && insertedRows.length > 0) {
           for (const row of insertedRows) {
             if (!existingExtSet.has(row.external_id)) {
+              // 1. Cluster article into story
               try {
                 await clusterArticle(
                   {
@@ -424,6 +426,26 @@ export async function persistArticles(
                 console.warn(
                   `[Persistence] Story clustering notice for article "${row.title}":`,
                   clusterErr
+                );
+              }
+
+              // 2. Classify and tag article with categories
+              try {
+                const articleRecord = batch.find((b) => b.externalId.trim() === row.external_id);
+                await categorizeAndTagArticle(
+                  {
+                    id: row.id,
+                    title: row.title,
+                    description: articleRecord?.description,
+                    content: articleRecord?.content,
+                  },
+                  client
+                );
+              } catch (catErr) {
+                // Non-fatal
+                console.warn(
+                  `[Persistence] Category matching notice for article "${row.title}":`,
+                  catErr
                 );
               }
             }

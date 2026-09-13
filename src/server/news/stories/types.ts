@@ -32,4 +32,5 @@ export interface StoryFetchOptions {
   limit?: number;
   offset?: number;
   status?: string;
+  categoryId?: string;
 }
