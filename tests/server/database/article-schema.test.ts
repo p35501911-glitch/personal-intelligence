@@ -41,6 +41,7 @@ function createTestDatabase() {
   // Register gen_random_uuid() for uuid generation
   db.public.registerFunction({
     name: "gen_random_uuid",
+    impure: true,
     implementation: () => crypto.randomUUID(),
   });
 
