@@ -130,9 +130,34 @@ export async function getUserPersonalizedFeed(
   // If userId provided and categories not explicitly passed, load from DB
   if (userId && (!options.userCategoryIds || options.userCategoryIds.length === 0)) {
     const prefs = await getUserPreferencesData(userId, client);
-    mode = prefs.mode;
+    mode = options.selectionMode || prefs.mode;
     categoryIds = prefs.categoryIds;
   }
+
+  // If in CATEGORY mode and user has 0 categories selected, return empty feed immediately
+  if (mode === "CATEGORY" && categoryIds.length === 0) {
+    return {
+      stories: [],
+      limit,
+      offset,
+      count: 0,
+      hasMore: false,
+      mode: "CATEGORY",
+      userCategoryCount: 0,
+    };
+  }
+
+  // Expand category IDs to include both IDs and slugs for hierarchy matching
+  const { categoryMap, slugMap } = getTaxonomyIndex();
+  const effectiveCategoryIds = new Set<string>(categoryIds);
+  for (const id of categoryIds) {
+    const rule = slugMap.get(id) || categoryMap.get(id);
+    if (rule) {
+      effectiveCategoryIds.add(rule.slug);
+      effectiveCategoryIds.add(rule.id);
+    }
+  }
+  const matchingCategoryIds = Array.from(effectiveCategoryIds);
 
   // 1. Fetch active candidate stories within time window
   const windowStart = new Date(Date.now() - windowDays * 24 * 60 * 60 * 1000).toISOString();
@@ -147,13 +172,13 @@ export async function getUserPersonalizedFeed(
 
   const { data: rawStories, error: storiesErr } = await storiesQuery;
 
-function getImportanceLevel(score: number | null): "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" {
-  if (score === null || score === undefined) return "LOW";
-  if (score >= 0.8) return "CRITICAL";
-  if (score >= 0.6) return "HIGH";
-  if (score >= 0.4) return "MEDIUM";
-  return "LOW";
-}
+  function getImportanceLevel(score: number | null): "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" {
+    if (score === null || score === undefined) return "LOW";
+    if (score >= 0.8) return "CRITICAL";
+    if (score >= 0.6) return "HIGH";
+    if (score >= 0.4) return "MEDIUM";
+    return "LOW";
+  }
 
   if (storiesErr || !rawStories || rawStories.length === 0) {
     return {
@@ -187,28 +212,34 @@ function getImportanceLevel(score: number | null): "CRITICAL" | "HIGH" | "MEDIUM
     `)
     .in("story_id", storyIds);
 
-  const { categoryMap, slugMap } = getTaxonomyIndex();
-
   // Group categories by story_id
   const categoriesByStory = new Map<string, StoryCategoryTag[]>();
 
   const rows = (rawStoryCategories || []) as unknown as StoryCategoryJoinRow[];
   for (const row of rows) {
     const catObj = Array.isArray(row.categories) ? row.categories[0] : row.categories;
-    if (!catObj) continue;
+    const indexed =
+      (catObj?.slug && slugMap.get(catObj.slug)) ||
+      (catObj?.id && categoryMap.get(catObj.id)) ||
+      slugMap.get(row.category_id) ||
+      categoryMap.get(row.category_id);
 
-    // Lookup taxonomy index to get root info
-    const indexed = slugMap.get(catObj.slug) || categoryMap.get(catObj.id);
+    if (!catObj && !indexed) continue;
+
+    const resolvedId = catObj?.id || indexed?.id || row.category_id;
+    const resolvedSlug = catObj?.slug || indexed?.slug || row.category_id;
+    const resolvedName = catObj?.name || indexed?.name || resolvedSlug;
+    const resolvedLevel = (catObj?.level as 1 | 2 | 3) || indexed?.level || 1;
 
     const tag: StoryCategoryTag = {
-      categoryId: catObj.id,
-      categorySlug: catObj.slug,
-      categoryName: catObj.name,
+      categoryId: resolvedId,
+      categorySlug: resolvedSlug,
+      categoryName: resolvedName,
       rootId: indexed?.rootId,
-      rootSlug: indexed ? categoryMap.get(indexed.rootId)?.slug : undefined,
-      parentId: indexed?.parentId,
-      parentSlug: indexed?.parentId ? categoryMap.get(indexed.parentId)?.slug : undefined,
-      level: (catObj.level as 1 | 2 | 3) || 1,
+      rootSlug: indexed ? (categoryMap.get(indexed.rootId)?.slug || indexed.rootId) : undefined,
+      parentId: catObj?.parent_id || indexed?.parentId,
+      parentSlug: indexed?.parentId ? (categoryMap.get(indexed.parentId)?.slug || indexed.parentId) : undefined,
+      level: resolvedLevel,
       confidence: Number(row.confidence),
       isPrimary: row.is_primary,
     };
@@ -289,7 +320,7 @@ function getImportanceLevel(score: number | null): "CRITICAL" | "HIGH" | "MEDIUM
 
     const relevance = computeUserRelevance(
       {
-        userCategoryIds: categoryIds,
+        userCategoryIds: matchingCategoryIds,
         selectionMode: mode,
         story: {
           id: storyRow.id,

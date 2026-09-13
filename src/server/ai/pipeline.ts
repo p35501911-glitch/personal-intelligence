@@ -5,6 +5,7 @@ import { getGeminiConfig, isGeminiConfigured } from "./client";
 import { classifyStoryWithFlashLite, isValidTaxonomySlug } from "./classifier";
 import { generateImportantStoryIntelligence } from "./service";
 import { tagStoryWithCategories, getCategorySlugToIdMap } from "../news/categories/service";
+import { getTaxonomyIndex } from "../news/categories/keywords";
 import type { StoryInputForAI } from "./types";
 import type { GoogleGenAI } from "@google/genai";
 
@@ -351,19 +352,27 @@ export async function processPendingStoryIntelligence(options?: {
       if (triage.data.categorySlugs && triage.data.categorySlugs.length > 0) {
         try {
           const slugMap = await getCategorySlugToIdMap(client);
+          const { slugMap: taxMap, categoryMap: idMap } = getTaxonomyIndex();
           const validMatches = triage.data.categorySlugs
             .filter((slug) => isValidTaxonomySlug(slug))
-            .map((slug, idx) => ({
-              categoryId: slugMap.get(slug) || slug,
-              categorySlug: slug,
-              categoryName: slug,
-              rootId: slug,
-              rootSlug: slug,
-              level: 1 as const,
-              confidence: Math.max(0.7, 0.95 - idx * 0.1),
-              isPrimary: idx === 0,
-              matchedRule: "gemini-flash-lite-ai",
-            }));
+            .map((slug, idx) => {
+              const rule = taxMap.get(slug);
+              const resolvedRootSlug = rule ? (idMap.get(rule.rootId)?.slug || rule.rootId) : slug;
+              const resolvedParentSlug = rule?.parentId ? (idMap.get(rule.parentId)?.slug || rule.parentId) : undefined;
+              return {
+                categoryId: slugMap.get(slug) || rule?.id || slug,
+                categorySlug: slug,
+                categoryName: rule?.name || slug,
+                rootId: rule?.rootId || slug,
+                rootSlug: resolvedRootSlug,
+                parentId: rule?.parentId,
+                parentSlug: resolvedParentSlug,
+                level: (rule?.level as 1 | 2 | 3) || 1,
+                confidence: Math.max(0.7, 0.95 - idx * 0.1),
+                isPrimary: idx === 0,
+                matchedRule: "gemini-flash-lite-ai",
+              };
+            });
 
           if (validMatches.length > 0) {
             await tagStoryWithCategories(story.id, validMatches, client);

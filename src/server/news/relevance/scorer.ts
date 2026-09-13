@@ -105,7 +105,7 @@ export function computeUserRelevance(
   // -------------------------------------------------------------
   // Mode ALL: General interest feed (broad reader)
   // -------------------------------------------------------------
-  if (selectionMode === "ALL" || userCategoryIds.length === 0) {
+  if (selectionMode === "ALL") {
     // Breadth score: normalized from source count (1 source = 0.60, 4+ sources = 0.95)
     const sourceStrength = Math.min(1.0, 0.50 + Math.min(story.sourceCount, 5) * 0.10);
     const maxConfidence = story.categories.length > 0
@@ -126,6 +126,21 @@ export function computeUserRelevance(
       synergyBoost: 0,
       recencyFactor,
       explanation: `Top story across ${story.sourceCount} publisher${story.sourceCount > 1 ? "s" : ""} in ${catName}`,
+    };
+  }
+
+  // -------------------------------------------------------------
+  // Mode CATEGORY: Empty preferences check
+  // -------------------------------------------------------------
+  if (userCategoryIds.length === 0) {
+    return {
+      score: 0,
+      isRelevant: false,
+      matchedCategoryIds: [],
+      matchedCategoryNames: [],
+      synergyBoost: 0,
+      recencyFactor,
+      explanation: "No categories selected in your preferences",
     };
   }
 

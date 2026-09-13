@@ -82,7 +82,13 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
     loadPreferences();
   }, []);
 
-  // 2. Fetch feed stories when filters, category, or mode change
+  // Derive activeCategoryId validated against userCategoryIds
+  const validatedActiveCategoryId =
+    activeCategoryId && (userCategoryIds.length === 0 || userCategoryIds.includes(activeCategoryId))
+      ? activeCategoryId
+      : null;
+
+  // 2. Fetch feed stories when filters, category, mode, or user category preferences change
   useEffect(() => {
     let isCancelled = false;
 
@@ -93,8 +99,8 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
         params.set('offset', '0');
         params.set('mode', mode);
 
-        if (activeCategoryId) {
-          params.set('categoryId', activeCategoryId);
+        if (validatedActiveCategoryId) {
+          params.set('categoryId', validatedActiveCategoryId);
         }
         if (importanceFilter !== null) {
           params.set('minImportance', String(importanceFilter));
@@ -135,7 +141,7 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
     return () => {
       isCancelled = true;
     };
-  }, [mode, activeCategoryId, importanceFilter, sortBy]);
+  }, [mode, validatedActiveCategoryId, importanceFilter, sortBy, userCategoryIds]);
 
   // 3. Manual refresh or pagination loader
   const executeFetch = useCallback(
@@ -146,8 +152,8 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
         params.set('offset', String(targetOffset));
         params.set('mode', mode);
 
-        if (activeCategoryId) {
-          params.set('categoryId', activeCategoryId);
+        if (validatedActiveCategoryId) {
+          params.set('categoryId', validatedActiveCategoryId);
         }
         if (importanceFilter !== null) {
           params.set('minImportance', String(importanceFilter));
@@ -195,7 +201,7 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
         }
       }
     },
-    [mode, activeCategoryId, importanceFilter, sortBy]
+    [mode, validatedActiveCategoryId, importanceFilter, sortBy]
   );
 
   // 4. Visibility-aware 60s background polling
@@ -272,7 +278,7 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
         mode={mode}
         onToggleMode={handleToggleMode}
         selectedCategoryIds={userCategoryIds}
-        activeCategoryId={activeCategoryId}
+        activeCategoryId={validatedActiveCategoryId}
         onSelectCategory={handleSelectCategory}
         categoryNamesMap={categoryNamesMap}
         importanceFilter={importanceFilter}

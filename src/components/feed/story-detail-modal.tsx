@@ -18,6 +18,7 @@ import {
   AlertTriangle,
   Brain,
   Lightbulb,
+  Tag,
 } from 'lucide-react';
 
 interface StoryDetailModalProps {
@@ -210,6 +211,48 @@ export function StoryDetailModal({ story, isOpen, onClose }: StoryDetailModalPro
               </div>
             </div>
           </div>
+
+          {/* Taxonomy & AI Classification Section */}
+          {story.categories && story.categories.length > 0 && (
+            <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800 space-y-2.5">
+              <div className="flex items-center justify-between text-xs text-slate-400">
+                <span className="font-bold uppercase tracking-wider text-slate-300 flex items-center space-x-1.5">
+                  <Tag className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>Taxonomy & AI Classification</span>
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  50-Category Taxonomy
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {story.categories.map((cat) => (
+                  <div
+                    key={cat.categoryId}
+                    className={`px-3 py-1.5 rounded-xl border text-xs flex items-center space-x-2 transition ${
+                      cat.isPrimary
+                        ? "bg-indigo-950/50 border-indigo-500/40 text-indigo-200"
+                        : "bg-slate-900 border-slate-800 text-slate-300"
+                    }`}
+                  >
+                    <span className="font-semibold">{cat.categoryName}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-400 border border-slate-700/50">
+                      {cat.level === 3 ? "Topic" : cat.level === 2 ? "Subcategory" : "Category"}
+                    </span>
+                    {cat.confidence ? (
+                      <span className="text-[10px] text-indigo-400/80 font-mono">
+                        {Math.round(cat.confidence * 100)}%
+                      </span>
+                    ) : null}
+                    {cat.isPrimary && (
+                      <span className="text-[10px] text-indigo-300 font-bold uppercase tracking-wider">
+                        • Primary
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Optional Summary */}
           {story.summary && (

@@ -19,7 +19,17 @@ export const feedQuerySchema = z.object({
     .min(0, "Offset cannot be negative")
     .default(0),
   mode: z
-    .enum(["CATEGORY", "ALL"])
+    .preprocess(
+      (val) => {
+        if (typeof val === "string") {
+          const u = val.trim().toUpperCase();
+          if (u === "TOPICS") return "CATEGORY";
+          return u;
+        }
+        return val;
+      },
+      z.enum(["CATEGORY", "ALL"])
+    )
     .optional(),
   categoryId: z
     .string()
@@ -52,7 +62,7 @@ export type FeedQueryInput = z.infer<typeof feedQuerySchema>;
  * Query Parameters:
  * - limit: number (1-50, default 20)
  * - offset: number (>= 0, default 0)
- * - mode: 'CATEGORY' | 'ALL' (optional override)
+ * - mode: 'CATEGORY' | 'ALL' | 'topics' | 'all' (optional override)
  * - categoryId: string (optional single category filter)
  * - sortBy: 'relevance' | 'recent' | 'importance' (default 'relevance')
  * - minImportance: number 0.0-1.0 (optional)
@@ -72,7 +82,7 @@ export async function GET(request: Request) {
     }
     const modeParam = searchParams.get("mode");
     if (modeParam !== null && modeParam.trim() !== "") {
-      rawParams.mode = modeParam.trim().toUpperCase();
+      rawParams.mode = modeParam.trim();
     }
     const categoryIdParam = searchParams.get("categoryId");
     if (categoryIdParam !== null && categoryIdParam.trim() !== "") {
@@ -132,7 +142,7 @@ export async function GET(request: Request) {
     const result = await getUserPersonalizedFeed({
       userId,
       userCategoryIds: fallbackCategoryIds,
-      selectionMode: queryMode || (fallbackMode as "CATEGORY" | "ALL"),
+      selectionMode: queryMode || (userId ? undefined : fallbackMode),
       limit,
       offset,
       sortBy,
