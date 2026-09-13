@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { saveStory, getSavedStories } from "@/server/news/saved-stories";
+import {
+  checkRateLimit,
+  getClientIdentifier,
+  RATE_LIMIT_CONFIGS,
+  rateLimitExceededResponse,
+} from "@/server/security/rate-limiter";
 
 export const saveStoryBodySchema = z.object({
   storyId: z.string().trim().min(1, "storyId is required"),
@@ -40,6 +46,15 @@ export async function POST(request: Request) {
         { success: false, error: "Unauthorized" },
         { status: 401 }
       );
+    }
+
+    const clientId = getClientIdentifier(request, user.id);
+    const rateCheck = checkRateLimit(
+      `saved:post:${clientId}`,
+      RATE_LIMIT_CONFIGS.mutations
+    );
+    if (!rateCheck.allowed) {
+      return rateLimitExceededResponse(rateCheck);
     }
 
     let json: unknown;

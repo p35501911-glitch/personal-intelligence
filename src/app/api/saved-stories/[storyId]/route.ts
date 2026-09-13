@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { unsaveStory } from "@/server/news/saved-stories";
+import {
+  checkRateLimit,
+  getClientIdentifier,
+  RATE_LIMIT_CONFIGS,
+  rateLimitExceededResponse,
+} from "@/server/security/rate-limiter";
 
 /**
  * DELETE /api/saved-stories/[storyId]
@@ -8,7 +14,7 @@ import { unsaveStory } from "@/server/news/saved-stories";
  * Removes a story from the authenticated user's saved intelligence dossier.
  */
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ storyId: string }> }
 ) {
   try {
@@ -23,6 +29,15 @@ export async function DELETE(
         { success: false, error: "Unauthorized" },
         { status: 401 }
       );
+    }
+
+    const clientId = getClientIdentifier(request, user.id);
+    const rateCheck = checkRateLimit(
+      `saved:delete:${clientId}`,
+      RATE_LIMIT_CONFIGS.mutations
+    );
+    if (!rateCheck.allowed) {
+      return rateLimitExceededResponse(rateCheck);
     }
 
     const { storyId } = await params;

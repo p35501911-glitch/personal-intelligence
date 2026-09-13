@@ -8,6 +8,13 @@ import {
 } from "@/server/ai/client";
 import { processPendingStoryIntelligence } from "@/server/ai/pipeline";
 
+import {
+  checkRateLimit,
+  getClientIdentifier,
+  RATE_LIMIT_CONFIGS,
+  rateLimitExceededResponse,
+} from "@/server/security/rate-limiter";
+
 const aiProcessBodySchema = z
   .object({
     limit: z.number().int().min(1).max(50).optional(),
@@ -51,6 +58,15 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { success: false, error: "Unauthorized: Invalid or missing secret" },
       { status: 401 }
+    );
+  }
+
+  const clientId = getClientIdentifier(request);
+  const rateCheck = checkRateLimit(`ai:process:${clientId}`, RATE_LIMIT_CONFIGS.aiProcessing);
+  if (!rateCheck.allowed) {
+    return rateLimitExceededResponse(
+      rateCheck,
+      "AI processing rate limit exceeded. Please wait before triggering another batch."
     );
   }
 

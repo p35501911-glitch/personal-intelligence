@@ -1,6 +1,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { DashboardView } from '@/components/dashboard-view';
+import { UserMenu } from '@/components/auth';
 import { TAXONOMY_SEED } from '@/lib/data/categories-seed';
 import { Zap, ShieldCheck } from 'lucide-react';
 
@@ -27,15 +28,12 @@ export default function Home() {
           <div className="flex items-center space-x-3">
             <Link
               href="/onboarding/categories"
-              className="px-3.5 py-1.5 rounded-full text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-md shadow-indigo-600/30 transition-all flex items-center space-x-1.5"
+              className="hidden md:flex px-3.5 py-1.5 rounded-full text-xs font-bold bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 transition-all items-center space-x-1.5"
             >
               <span>Onboarding Flow</span>
               <span>→</span>
             </Link>
-            <div className="flex items-center space-x-2 text-xs text-slate-400 bg-slate-900 px-3 py-1.5 rounded-full border border-slate-800">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span className="font-medium">Supabase Connected</span>
-            </div>
+            <UserMenu />
           </div>
         </div>
       </header>

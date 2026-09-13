@@ -3,6 +3,12 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getUserPersonalizedFeed } from "@/server/news/relevance";
 import { getDemoPreferences } from "../user/categories/route";
+import {
+  checkRateLimit,
+  getClientIdentifier,
+  RATE_LIMIT_CONFIGS,
+  rateLimitExceededResponse,
+} from "@/server/security/rate-limiter";
 
 export const feedQuerySchema = z.object({
   limit: z
@@ -110,6 +116,16 @@ export async function GET(request: Request) {
     }
 
     const { limit, offset, mode: queryMode, categoryId, sortBy, minImportance } = validation.data;
+
+    // Rate limiting
+    const clientId = getClientIdentifier(request);
+    const rateCheck = checkRateLimit(
+      `feed:read:${clientId}`,
+      RATE_LIMIT_CONFIGS.feedRead
+    );
+    if (!rateCheck.allowed) {
+      return rateLimitExceededResponse(rateCheck);
+    }
 
     // Security check: Check user authentication strictly from session
     // Never allow client to supply userId parameter to read another user's feed
