@@ -475,6 +475,7 @@ test("Phase 3C — Free Gemini AI Intelligence Suite", async (t) => {
       limit: 1,
     });
 
+    assert.equal(stats.succeeded, 1);
     assert.ok(persistedRecord !== null);
     const saved = persistedRecord as Record<string, unknown>;
     assert.equal(saved.story_id, targetStoryId);
