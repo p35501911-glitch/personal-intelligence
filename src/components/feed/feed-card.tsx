@@ -1,0 +1,170 @@
+'use client';
+
+import React from 'react';
+import { PersonalizedStoryItem } from '@/server/news/relevance';
+import { Clock, Layers, Globe } from 'lucide-react';
+
+interface FeedCardProps {
+  story: PersonalizedStoryItem;
+  onOpenDetail: (story: PersonalizedStoryItem) => void;
+}
+
+/**
+ * Returns human-readable relative time (e.g., '12 min ago', '3 hours ago', 'Yesterday').
+ */
+function getRelativeTime(dateString: string): string {
+  const published = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - published.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDay = Math.floor(diffHour / 24);
+
+  if (diffMin < 1) return 'Just now';
+  if (diffMin < 60) return `${diffMin} min ago`;
+  if (diffHour === 1) return '1 hour ago';
+  if (diffHour < 24) return `${diffHour} hours ago`;
+  if (diffDay === 1) return 'Yesterday';
+  if (diffDay < 7) return `${diffDay} days ago`;
+  return published.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+/**
+ * Maps importance levels to distinctive visual badge colors.
+ */
+function getImportanceBadge(level: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW') {
+  switch (level) {
+    case 'CRITICAL':
+      return {
+        label: 'CRITICAL',
+        classes: 'bg-rose-500/15 border-rose-500/30 text-rose-400 font-bold',
+      };
+    case 'HIGH':
+      return {
+        label: 'HIGH',
+        classes: 'bg-amber-500/15 border-amber-500/30 text-amber-400 font-semibold',
+      };
+    case 'MEDIUM':
+      return {
+        label: 'MEDIUM',
+        classes: 'bg-sky-500/15 border-sky-500/30 text-sky-400 font-medium',
+      };
+    case 'LOW':
+    default:
+      return {
+        label: 'LOW',
+        classes: 'bg-slate-700/30 border-slate-700 text-slate-400 font-normal',
+      };
+  }
+}
+
+export function FeedCard({ story, onOpenDetail }: FeedCardProps) {
+  const importanceBadge = getImportanceBadge(story.importance);
+  const relativeTime = getRelativeTime(story.latestPublishedAt);
+
+  // Extract publisher names preview (up to 3, plus "+N more")
+  const sourceNames = story.sources && story.sources.length > 0
+    ? story.sources.map((s) => s.name).filter(Boolean)
+    : [];
+  const primarySources = sourceNames.slice(0, 3);
+  const extraSourcesCount = Math.max(0, (story.sourceCount || sourceNames.length) - primarySources.length);
+
+  // Extract primary category tags for the header pill
+  const categoryPills = (story.categories || []).slice(0, 2);
+
+  return (
+    <article
+      onClick={() => onOpenDetail(story)}
+      className="group relative flex flex-col justify-between bg-slate-900/70 hover:bg-slate-900 border border-slate-800 hover:border-indigo-500/40 rounded-2xl p-5 transition-all duration-200 cursor-pointer shadow-lg hover:shadow-indigo-500/10 hover:-translate-y-0.5"
+    >
+      <div>
+        {/* Top Meta Bar: Category + Importance Level */}
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex items-center space-x-1.5 overflow-hidden">
+            {categoryPills.length > 0 ? (
+              categoryPills.map((cat) => (
+                <span
+                  key={cat.categoryId}
+                  className="px-2 py-0.5 text-[11px] font-medium rounded-md bg-slate-800/80 border border-slate-700/60 text-slate-300 truncate max-w-[140px]"
+                >
+                  {cat.categoryName}
+                </span>
+              ))
+            ) : (
+              <span className="px-2 py-0.5 text-[11px] font-medium rounded-md bg-slate-800/80 border border-slate-700/60 text-slate-400">
+                General
+              </span>
+            )}
+          </div>
+
+          <span
+            className={`px-2 py-0.5 text-[10px] tracking-wide rounded-md border uppercase shrink-0 ${importanceBadge.classes}`}
+          >
+            {importanceBadge.label}
+          </span>
+        </div>
+
+        {/* Story Title */}
+        <h2 className="text-base sm:text-lg font-bold text-white group-hover:text-indigo-300 transition-colors line-clamp-2 leading-snug tracking-tight mb-2">
+          {story.title || story.canonicalTitle}
+        </h2>
+
+        {/* Optional Image */}
+        {story.imageUrl && (
+          <div className="relative w-full h-40 sm:h-44 rounded-xl overflow-hidden mb-3 bg-slate-800">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={story.imageUrl}
+              alt={story.title || 'Story headline image'}
+              className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
+              loading="lazy"
+              onError={(e) => {
+                // If image fails to load, gracefully hide it
+                (e.target as HTMLElement).style.display = 'none';
+              }}
+            />
+          </div>
+        )}
+
+        {/* Optional Summary / Description */}
+        {story.summary && (
+          <p className="text-xs sm:text-sm text-slate-400 line-clamp-2 leading-relaxed mb-4">
+            {story.summary}
+          </p>
+        )}
+      </div>
+
+      {/* Footer: Publisher Preview & Meta Counts */}
+      <div className="pt-3 border-t border-slate-800/80 mt-auto">
+        {/* Publisher String */}
+        {primarySources.length > 0 && (
+          <div className="text-xs font-medium text-slate-400 flex items-center space-x-1.5 mb-2 truncate">
+            <Globe className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+            <span className="truncate">
+              {primarySources.join(' · ')}
+              {extraSourcesCount > 0 && ` +${extraSourcesCount}`}
+            </span>
+          </div>
+        )}
+
+        {/* Meta Stats Row */}
+        <div className="flex items-center justify-between text-[11px] text-slate-500">
+          <div className="flex items-center space-x-3">
+            <span className="flex items-center space-x-1">
+              <Layers className="w-3 h-3 text-slate-400" />
+              <span>
+                <strong className="text-slate-300">{story.sourceCount}</strong> {story.sourceCount === 1 ? 'source' : 'sources'} · <strong className="text-slate-300">{story.articleCount}</strong> {story.articleCount === 1 ? 'article' : 'articles'}
+              </span>
+            </span>
+          </div>
+
+          <div className="flex items-center space-x-1 text-slate-400">
+            <Clock className="w-3 h-3" />
+            <span>{relativeTime}</span>
+          </div>
+        </div>
+      </div>
+    </article>
+  );
+}

@@ -1,6 +1,6 @@
 import React from 'react';
 import Link from 'next/link';
-import { CategoryBrowser } from '@/components/categories/category-browser';
+import { DashboardView } from '@/components/dashboard-view';
 import { TAXONOMY_SEED } from '@/lib/data/categories-seed';
 import { Zap, ShieldCheck } from 'lucide-react';
 
@@ -40,10 +40,8 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Main Content: Category Browser */}
-      <div className="flex-1">
-        <CategoryBrowser initialCategories={TAXONOMY_SEED} />
-      </div>
+      {/* Main Content: Dashboard View (Feed + Topic Management) */}
+      <DashboardView initialCategories={TAXONOMY_SEED} />
 
       {/* Footer */}
       <footer className="border-t border-slate-800/80 bg-slate-950/90 py-8 mt-16">

@@ -461,3 +461,205 @@ export async function getStories(
     offset,
   };
 }
+
+export interface StoryArticleDetail {
+  id: string;
+  title: string;
+  url: string;
+  canonicalUrl: string | null;
+  publishedAt: string;
+  imageUrl: string | null;
+  author: string | null;
+  provider: string;
+  publisher: string;
+  publisherUrl: string | null;
+}
+
+export interface StoryCategoryDetail {
+  id: string;
+  name: string;
+  slug: string;
+  level: number;
+  isPrimary: boolean;
+  confidence: number;
+}
+
+export interface StoryDetails {
+  id: string;
+  title: string;
+  canonicalTitle: string;
+  summary: string | null;
+  importance: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+  importanceScore: number | null;
+  firstPublishedAt: string;
+  latestPublishedAt: string;
+  articleCount: number;
+  sourceCount: number;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  categories: StoryCategoryDetail[];
+  articles: StoryArticleDetail[];
+  coverage: StoryArticleDetail[]; // alias for articles
+}
+
+/**
+ * Fetches full story details, including all attached publisher articles, original links,
+ * and category tags.
+ */
+export async function getStoryDetails(
+  storyId: string,
+  client: SupabaseClient<Database> = getServiceSupabaseClient()
+): Promise<StoryDetails | null> {
+  // 1. Fetch story
+  const { data: storyRow, error: storyErr } = await client
+    .from("stories")
+    .select("*")
+    .eq("id", storyId)
+    .maybeSingle();
+
+  if (storyErr || !storyRow) {
+    return null;
+  }
+
+  // 2. Fetch categories
+  const { data: rawCategories } = await client
+    .from("story_categories")
+    .select(`
+      category_id,
+      confidence,
+      is_primary,
+      categories (
+        id,
+        name,
+        slug,
+        level
+      )
+    `)
+    .eq("story_id", storyId);
+
+  interface JoinedCatRow {
+    category_id: string;
+    confidence: number | string;
+    is_primary: boolean;
+    categories: {
+      id: string;
+      name: string;
+      slug: string;
+      level: number;
+    } | { id: string; name: string; slug: string; level: number }[] | null;
+  }
+
+  const categoryDetails: StoryCategoryDetail[] = [];
+  for (const r of ((rawCategories || []) as unknown as JoinedCatRow[])) {
+    const cat = Array.isArray(r.categories) ? r.categories[0] : r.categories;
+    if (cat) {
+      categoryDetails.push({
+        id: cat.id,
+        name: cat.name,
+        slug: cat.slug,
+        level: cat.level,
+        isPrimary: r.is_primary,
+        confidence: Number(r.confidence),
+      });
+    }
+  }
+
+  // 3. Fetch attached articles with publisher sources
+  const { data: rawArticles } = await client
+    .from("story_articles")
+    .select(`
+      article_id,
+      articles (
+        id,
+        title,
+        url,
+        canonical_url,
+        published_at,
+        image_url,
+        author,
+        provider,
+        source_id,
+        sources (
+          id,
+          name,
+          url
+        )
+      )
+    `)
+    .eq("story_id", storyId);
+
+  interface JoinedArticleRow {
+    article_id: string;
+    articles: {
+      id: string;
+      title: string;
+      url: string;
+      canonical_url: string | null;
+      published_at: string;
+      image_url: string | null;
+      author: string | null;
+      provider: string;
+      source_id: string | null;
+      sources: {
+        id: string;
+        name: string;
+        url: string | null;
+      } | null;
+    } | null;
+  }
+
+  const articleDetails: StoryArticleDetail[] = [];
+  for (const r of ((rawArticles || []) as unknown as JoinedArticleRow[])) {
+    if (r.articles) {
+      const a = r.articles;
+      const publisher = a.sources?.name || a.provider.toUpperCase();
+      const publisherUrl = a.sources?.url || null;
+
+      articleDetails.push({
+        id: a.id,
+        title: a.title,
+        url: a.url,
+        canonicalUrl: a.canonical_url,
+        publishedAt: a.published_at,
+        imageUrl: a.image_url,
+        author: a.author,
+        provider: a.provider,
+        publisher,
+        publisherUrl,
+      });
+    }
+  }
+
+  // Sort articles by publishedAt DESC
+  articleDetails.sort(
+    (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()
+  );
+
+  const impScore = storyRow.importance_score ? Number(storyRow.importance_score) : null;
+  let importance: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" = "LOW";
+  if (impScore !== null) {
+    if (impScore >= 0.8) importance = "CRITICAL";
+    else if (impScore >= 0.6) importance = "HIGH";
+    else if (impScore >= 0.4) importance = "MEDIUM";
+  }
+
+  return {
+    id: storyRow.id,
+    title: storyRow.canonical_title,
+    canonicalTitle: storyRow.canonical_title,
+    summary: storyRow.summary,
+    importance,
+    importanceScore: impScore,
+    firstPublishedAt: storyRow.first_published_at,
+    latestPublishedAt: storyRow.latest_published_at,
+    articleCount: Math.max(storyRow.article_count, articleDetails.length),
+    sourceCount: storyRow.source_count,
+    status: storyRow.status,
+    createdAt: storyRow.created_at,
+    updatedAt: storyRow.updated_at,
+    categories: categoryDetails,
+    articles: articleDetails,
+    coverage: articleDetails,
+  };
+}

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getUserPersonalizedFeed } from "@/server/news/relevance";
+import { getDemoPreferences } from "../user/categories/route";
 
 export const feedQuerySchema = z.object({
   limit: z
@@ -17,6 +18,24 @@ export const feedQuerySchema = z.object({
     .int("Offset must be an integer")
     .min(0, "Offset cannot be negative")
     .default(0),
+  mode: z
+    .enum(["CATEGORY", "ALL"])
+    .optional(),
+  categoryId: z
+    .string()
+    .trim()
+    .min(1)
+    .optional(),
+  sortBy: z
+    .enum(["relevance", "recent", "importance"])
+    .default("relevance")
+    .optional(),
+  minImportance: z
+    .coerce
+    .number({ message: "minImportance must be a valid number" })
+    .min(0, "minImportance must be at least 0")
+    .max(1, "minImportance cannot exceed 1")
+    .optional(),
 });
 
 export type FeedQueryInput = z.infer<typeof feedQuerySchema>;
@@ -27,11 +46,16 @@ export type FeedQueryInput = z.infer<typeof feedQuerySchema>;
  * Personalized intelligence feed endpoint.
  *
  * Returns stories ranked and annotated by user relevance based on
- * their explicit category choices, multi-category synergy, and recency decay.
+ * their explicit category choices, multi-category synergy, recency decay,
+ * and global importance scoring.
  *
  * Query Parameters:
  * - limit: number (1-50, default 20)
  * - offset: number (>= 0, default 0)
+ * - mode: 'CATEGORY' | 'ALL' (optional override)
+ * - categoryId: string (optional single category filter)
+ * - sortBy: 'relevance' | 'recent' | 'importance' (default 'relevance')
+ * - minImportance: number 0.0-1.0 (optional)
  */
 export async function GET(request: Request) {
   try {
@@ -46,6 +70,22 @@ export async function GET(request: Request) {
     if (offsetParam !== null && offsetParam.trim() !== "") {
       rawParams.offset = offsetParam.trim();
     }
+    const modeParam = searchParams.get("mode");
+    if (modeParam !== null && modeParam.trim() !== "") {
+      rawParams.mode = modeParam.trim().toUpperCase();
+    }
+    const categoryIdParam = searchParams.get("categoryId");
+    if (categoryIdParam !== null && categoryIdParam.trim() !== "") {
+      rawParams.categoryId = categoryIdParam.trim();
+    }
+    const sortByParam = searchParams.get("sortBy");
+    if (sortByParam !== null && sortByParam.trim() !== "") {
+      rawParams.sortBy = sortByParam.trim();
+    }
+    const minImportanceParam = searchParams.get("minImportance");
+    if (minImportanceParam !== null && minImportanceParam.trim() !== "") {
+      rawParams.minImportance = minImportanceParam.trim();
+    }
 
     const validation = feedQuerySchema.safeParse(rawParams);
     if (!validation.success) {
@@ -59,11 +99,13 @@ export async function GET(request: Request) {
       );
     }
 
-    const { limit, offset } = validation.data;
+    const { limit, offset, mode: queryMode, categoryId, sortBy, minImportance } = validation.data;
 
-    // Check user authentication
+    // Security check: Check user authentication strictly from session
+    // Never allow client to supply userId parameter to read another user's feed
     let userId: string | null = null;
     let fallbackCategoryIds: string[] | undefined = undefined;
+    let fallbackMode: "CATEGORY" | "ALL" = queryMode || "CATEGORY";
 
     try {
       const supabase = await createClient();
@@ -72,34 +114,48 @@ export async function GET(request: Request) {
         userId = user.id;
       }
     } catch {
-      // In non-auth or testing contexts, proceed to preview fallback
+      // Non-auth or testing contexts proceed to preview fallback
     }
 
-    // In preview / unauthenticated mode, supply default interest categories
+    // In preview / unauthenticated mode, supply active demo preferences or default categories
     if (!userId) {
-      fallbackCategoryIds = ["technology-ai", "cat-tech", "technology"];
+      const demoPrefs = getDemoPreferences();
+      fallbackMode = queryMode || demoPrefs.mode || "CATEGORY";
+      fallbackCategoryIds = categoryId ? [categoryId] : demoPrefs.categoryIds;
+      if (!fallbackCategoryIds || fallbackCategoryIds.length === 0) {
+        fallbackCategoryIds = ["technology-ai", "cat-tech", "technology"];
+      }
+    } else if (categoryId) {
+      fallbackCategoryIds = [categoryId];
     }
 
     const result = await getUserPersonalizedFeed({
       userId,
       userCategoryIds: fallbackCategoryIds,
+      selectionMode: queryMode || (fallbackMode as "CATEGORY" | "ALL"),
       limit,
       offset,
+      sortBy,
+      minImportance,
     });
 
     return NextResponse.json(
       {
         success: true,
-        feed: result.stories,
+        mode: result.mode,
+        stories: result.stories,
+        feed: result.stories, // Backward-compatibility alias
         pagination: {
           limit: result.limit,
           offset: result.offset,
           count: result.count,
+          hasMore: result.hasMore,
         },
         meta: {
           mode: result.mode,
           userCategoryCount: result.userCategoryCount,
-          isPersonalized: true,
+          isPersonalized: result.mode === "CATEGORY",
+          sortBy: sortBy || "relevance",
         },
       },
       { status: 200 }

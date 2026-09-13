@@ -27,6 +27,10 @@ let demoPreferencesStore: {
   categoryIds: ['cat-tech-ai', 'top-ai-agents'],
 };
 
+export function getDemoPreferences() {
+  return demoPreferencesStore;
+}
+
 export async function GET() {
   try {
     const supabase = await createClient();

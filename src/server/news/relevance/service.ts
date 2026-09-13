@@ -10,13 +10,18 @@ import {
 
 export interface PersonalizedStoryItem {
   id: string;
+  title: string;
   canonicalTitle: string;
   summary: string | null;
+  imageUrl: string | null;
   firstPublishedAt: string;
   latestPublishedAt: string;
   articleCount: number;
   sourceCount: number;
+  importance: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
   importanceScore: number | null;
+  categories: StoryCategoryTag[];
+  sources: Array<{ id: string; name: string; url: string | null }>;
   status: string;
   relevance: RelevanceScoreResult;
   feedScore: number;
@@ -30,6 +35,8 @@ export interface PersonalizedFeedOptions {
   offset?: number;
   minThreshold?: number;
   windowDays?: number; // Time window for candidate stories (default 7 days)
+  sortBy?: "relevance" | "recent" | "importance";
+  minImportance?: number;
   client?: SupabaseClient<Database>;
 }
 
@@ -38,6 +45,7 @@ export interface PersonalizedFeedResult {
   limit: number;
   offset: number;
   count: number;
+  hasMore: boolean;
   mode: "CATEGORY" | "ALL";
   userCategoryCount: number;
 }
@@ -139,12 +147,21 @@ export async function getUserPersonalizedFeed(
 
   const { data: rawStories, error: storiesErr } = await storiesQuery;
 
+function getImportanceLevel(score: number | null): "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" {
+  if (score === null || score === undefined) return "LOW";
+  if (score >= 0.8) return "CRITICAL";
+  if (score >= 0.6) return "HIGH";
+  if (score >= 0.4) return "MEDIUM";
+  return "LOW";
+}
+
   if (storiesErr || !rawStories || rawStories.length === 0) {
     return {
       stories: [],
       limit,
       offset,
       count: 0,
+      hasMore: false,
       mode,
       userCategoryCount: categoryIds.length,
     };
@@ -189,6 +206,8 @@ export async function getUserPersonalizedFeed(
       categoryName: catObj.name,
       rootId: indexed?.rootId,
       rootSlug: indexed ? categoryMap.get(indexed.rootId)?.slug : undefined,
+      parentId: indexed?.parentId,
+      parentSlug: indexed?.parentId ? categoryMap.get(indexed.parentId)?.slug : undefined,
       level: (catObj.level as 1 | 2 | 3) || 1,
       confidence: Number(row.confidence),
       isPrimary: row.is_primary,
@@ -198,6 +217,68 @@ export async function getUserPersonalizedFeed(
       categoriesByStory.set(row.story_id, []);
     }
     categoriesByStory.get(row.story_id)!.push(tag);
+  }
+
+  // 2b. Fetch primary images and publisher sources for candidate stories in a single batch
+  const storyMediaMap = new Map<
+    string,
+    { imageUrl: string | null; sources: Array<{ id: string; name: string; url: string | null }> }
+  >();
+
+  try {
+    const tableQuery = client?.from?.("story_articles");
+    if (tableQuery && typeof tableQuery.select === "function") {
+      const { data: rawArticles } = await tableQuery
+        .select(`
+          story_id,
+          articles (
+            id,
+            image_url,
+            source_id,
+            sources (
+              id,
+              name,
+              url
+            )
+          )
+        `)
+        .in("story_id", storyIds);
+
+      interface JoinedArticleData {
+        story_id: string;
+        articles: {
+          id: string;
+          image_url: string | null;
+          source_id: string | null;
+          sources: {
+            id: string;
+            name: string;
+            url: string | null;
+          } | null;
+        } | null;
+      }
+
+      const articleRows = (rawArticles || []) as unknown as JoinedArticleData[];
+      for (const r of articleRows) {
+        if (!storyMediaMap.has(r.story_id)) {
+          storyMediaMap.set(r.story_id, { imageUrl: null, sources: [] });
+        }
+        const entry = storyMediaMap.get(r.story_id)!;
+        if (r.articles) {
+          if (!entry.imageUrl && r.articles.image_url) {
+            entry.imageUrl = r.articles.image_url;
+          }
+          if (r.articles.sources) {
+            const src = r.articles.sources;
+            if (!entry.sources.some((s) => s.id === src.id)) {
+              entry.sources.push({ id: src.id, name: src.name, url: src.url });
+            }
+          }
+        }
+      }
+    }
+  } catch (mediaErr) {
+    console.warn("[Relevance Service] Non-fatal error fetching story media/sources:", mediaErr);
   }
 
   // 3. Compute relevance for each candidate story
@@ -236,23 +317,49 @@ export async function getUserPersonalizedFeed(
         ? Number((0.2 * relevance.score + 0.8 * importanceVal).toFixed(3))
         : Number((0.65 * relevance.score + 0.35 * importanceVal).toFixed(3));
 
+    const media = storyMediaMap.get(storyRow.id) || { imageUrl: null, sources: [] };
+    const impScore = storyRow.importance_score ? Number(storyRow.importance_score) : null;
+    const importanceLevel = getImportanceLevel(impScore);
+
     scoredStories.push({
       id: storyRow.id,
+      title: storyRow.canonical_title,
       canonicalTitle: storyRow.canonical_title,
       summary: storyRow.summary,
+      imageUrl: media.imageUrl,
       firstPublishedAt: storyRow.first_published_at,
       latestPublishedAt: storyRow.latest_published_at,
       articleCount: storyRow.article_count,
       sourceCount: storyRow.source_count,
-      importanceScore: storyRow.importance_score ? Number(storyRow.importance_score) : null,
+      importance: importanceLevel,
+      importanceScore: impScore,
+      categories: tags,
+      sources: media.sources,
       status: storyRow.status,
       relevance,
       feedScore,
     });
   }
 
-  // 4. Rank: primary sort by feedScore DESC, tiebreak by relevance.score DESC, tiebreak by latestPublishedAt DESC
-  scoredStories.sort((a, b) => {
+  // 4. Filter by minImportance if specified
+  const filteredStories =
+    options.minImportance !== undefined && options.minImportance !== null
+      ? scoredStories.filter((s) => (s.importanceScore ?? 0) >= options.minImportance!)
+      : scoredStories;
+
+  // 5. Sort
+  const sortBy = options.sortBy || "relevance";
+  filteredStories.sort((a, b) => {
+    if (sortBy === "recent") {
+      return new Date(b.latestPublishedAt).getTime() - new Date(a.latestPublishedAt).getTime();
+    }
+    if (sortBy === "importance") {
+      const impA = a.importanceScore ?? 0;
+      const impB = b.importanceScore ?? 0;
+      if (impB !== impA) return impB - impA;
+      return new Date(b.latestPublishedAt).getTime() - new Date(a.latestPublishedAt).getTime();
+    }
+    // Default: relevance (feedScore DESC)
     if (b.feedScore !== a.feedScore) {
       return b.feedScore - a.feedScore;
     }
@@ -262,14 +369,16 @@ export async function getUserPersonalizedFeed(
     return new Date(b.latestPublishedAt).getTime() - new Date(a.latestPublishedAt).getTime();
   });
 
-  const totalCount = scoredStories.length;
-  const paginated = scoredStories.slice(offset, offset + limit);
+  const totalCount = filteredStories.length;
+  const paginated = filteredStories.slice(offset, offset + limit);
+  const hasMore = offset + limit < totalCount;
 
   return {
     stories: paginated,
     limit,
     offset,
     count: totalCount,
+    hasMore,
     mode,
     userCategoryCount: categoryIds.length,
   };

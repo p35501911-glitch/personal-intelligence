@@ -4,6 +4,8 @@ export interface StoryCategoryTag {
   categoryName: string;
   rootId?: string | null;
   rootSlug?: string | null;
+  parentId?: string | null;
+  parentSlug?: string | null;
   level: 1 | 2 | 3;
   confidence: number;
   isPrimary: boolean;
@@ -145,18 +147,25 @@ export function computeUserRelevance(
       userCatSet.has(tag.categoryId.toLowerCase()) ||
       userCatSet.has(tag.categorySlug.toLowerCase());
 
-    // Check root category match
+    // Check parent category match (e.g. user selected subcategory, tag is child topic)
+    const isParentMatch =
+      Boolean(tag.parentId && userCatSet.has(tag.parentId.toLowerCase())) ||
+      Boolean(tag.parentSlug && userCatSet.has(tag.parentSlug.toLowerCase()));
+
+    // Check root category match (e.g. user selected main category, tag is child/grandchild)
     const isRootMatch =
       Boolean(tag.rootId && userCatSet.has(tag.rootId.toLowerCase())) ||
       Boolean(tag.rootSlug && userCatSet.has(tag.rootSlug.toLowerCase()));
 
-    if (isDirectMatch || isRootMatch) {
+    if (isDirectMatch || isParentMatch || isRootMatch) {
       // Specificity weight based on depth
       let specificityWeight = 0.75; // Level 1 default
       if (isDirectMatch) {
         if (tag.level === 3) specificityWeight = 1.00;
         else if (tag.level === 2) specificityWeight = 0.90;
         else specificityWeight = 0.80;
+      } else if (isParentMatch) {
+        specificityWeight = 0.85; // Direct parent subcategory match
       } else if (isRootMatch) {
         specificityWeight = 0.70;
       }
