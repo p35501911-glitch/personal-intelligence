@@ -3,6 +3,7 @@ import type { Database, InsertStory, StoryRow } from "@/types/database";
 import { getServiceSupabaseClient } from "../../supabase";
 import type { Story, StoryCandidate, StoryFetchOptions } from "./types";
 import { categorizeAndTagStory, getCategorySlugToIdMap } from "../categories/service";
+import { computeStoryImportance } from "../importance";
 
 /**
  * Selects the best canonical title deterministically between an existing title
@@ -42,12 +43,40 @@ export async function createStory(
 ): Promise<Story> {
   const publishedIso = article.publishedAt.toISOString();
 
+  // Fetch source details if available to factor in publisher tier
+  let sourceDetails: Array<{ name?: string | null; url?: string | null }> = [];
+  if (article.sourceId) {
+    try {
+      const { data: src } = await client
+        .from("sources")
+        .select("name, url")
+        .eq("id", article.sourceId)
+        .single();
+      if (src) {
+        sourceDetails = [{ name: src.name, url: src.url }];
+      }
+    } catch {
+      // Non-fatal if sources query fails
+    }
+  }
+
+  const importance = computeStoryImportance({
+    canonicalTitle: article.title,
+    summary: null,
+    articleCount: 1,
+    sourceCount: 1,
+    firstPublishedAt: article.publishedAt,
+    latestPublishedAt: article.publishedAt,
+    sources: sourceDetails,
+  });
+
   const newStoryRecord: InsertStory = {
     canonical_title: article.title.trim(),
     first_published_at: publishedIso,
     latest_published_at: publishedIso,
     article_count: 1,
     source_count: 1,
+    importance_score: importance.score,
     status: "active",
   };
 
@@ -178,6 +207,7 @@ export async function attachArticleToStory(
 
   // Calculate unique sources & timing
   const uniqueSourceKeys = new Set<string>();
+  const sourceIdsToQuery = new Set<string>();
   let earliestTime = new Date(storyRow.first_published_at).getTime();
   let latestTime = new Date(storyRow.latest_published_at).getTime();
 
@@ -192,6 +222,9 @@ export async function attachArticleToStory(
       // Unique source identifier: source_id or fallback to provider
       const sourceKey = item.articles.source_id || `provider:${item.articles.provider}`;
       uniqueSourceKeys.add(sourceKey);
+      if (item.articles.source_id) {
+        sourceIdsToQuery.add(item.articles.source_id);
+      }
     }
   }
 
@@ -201,11 +234,38 @@ export async function attachArticleToStory(
   if (incomingPubTime > latestTime) latestTime = incomingPubTime;
   if (article.sourceId) {
     uniqueSourceKeys.add(article.sourceId);
+    sourceIdsToQuery.add(article.sourceId);
   }
 
   const newArticleCount = Math.max(1, rawLinks.length);
   const newSourceCount = Math.max(1, uniqueSourceKeys.size);
   const bestTitle = chooseBestCanonicalTitle(storyRow.canonical_title, article.title);
+
+  // Fetch sources for tier authority calculation
+  let attachedSources: Array<{ name?: string | null; url?: string | null }> = [];
+  if (sourceIdsToQuery.size > 0) {
+    try {
+      const { data: sourcesData } = await client
+        .from("sources")
+        .select("name, url")
+        .in("id", Array.from(sourceIdsToQuery));
+      if (sourcesData) {
+        attachedSources = sourcesData;
+      }
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  const importance = computeStoryImportance({
+    canonicalTitle: bestTitle,
+    summary: storyRow.summary,
+    articleCount: newArticleCount,
+    sourceCount: newSourceCount,
+    firstPublishedAt: new Date(earliestTime),
+    latestPublishedAt: new Date(latestTime),
+    sources: attachedSources,
+  });
 
   const { data: updatedStory, error: updateErr } = await client
     .from("stories")
@@ -215,6 +275,7 @@ export async function attachArticleToStory(
       latest_published_at: new Date(latestTime).toISOString(),
       article_count: newArticleCount,
       source_count: newSourceCount,
+      importance_score: importance.score,
     })
     .eq("id", storyId)
     .select("*")
@@ -296,15 +357,33 @@ export async function getStories(
   options: StoryFetchOptions = {},
   client: SupabaseClient<Database> = getServiceSupabaseClient()
 ): Promise<{ stories: Story[]; count: number; limit: number; offset: number }> {
-  const { limit = 20, offset = 0, status = "active", categoryId } = options;
+  const {
+    limit = 20,
+    offset = 0,
+    status = "active",
+    categoryId,
+    sortBy = "recent",
+    minImportance,
+  } = options;
 
   let query = client
     .from("stories")
-    .select("*", { count: "exact" })
-    .order("latest_published_at", { ascending: false });
+    .select("*", { count: "exact" });
+
+  if (sortBy === "importance") {
+    query = query
+      .order("importance_score", { ascending: false, nullsFirst: false })
+      .order("latest_published_at", { ascending: false });
+  } else {
+    query = query.order("latest_published_at", { ascending: false });
+  }
 
   if (status) {
     query = query.eq("status", status);
+  }
+
+  if (minImportance !== undefined && minImportance !== null) {
+    query = query.gte("importance_score", minImportance);
   }
 
   // Handle category filtering

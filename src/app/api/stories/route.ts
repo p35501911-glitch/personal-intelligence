@@ -34,6 +34,16 @@ export const storiesQuerySchema = z.object({
     .boolean()
     .default(false)
     .optional(),
+  sortBy: z
+    .enum(["recent", "importance"])
+    .default("recent")
+    .optional(),
+  minImportance: z
+    .coerce
+    .number({ message: "minImportance must be a valid number" })
+    .min(0, "minImportance must be at least 0")
+    .max(1, "minImportance cannot exceed 1")
+    .optional(),
 });
 
 export type StoriesQueryInput = z.infer<typeof storiesQuerySchema>;
@@ -75,6 +85,14 @@ export async function GET(request: Request) {
     if (personalizedParam !== null && personalizedParam.trim() !== "") {
       rawParams.personalized = personalizedParam.trim();
     }
+    const sortByParam = searchParams.get("sortBy");
+    if (sortByParam !== null && sortByParam.trim() !== "") {
+      rawParams.sortBy = sortByParam.trim();
+    }
+    const minImportanceParam = searchParams.get("minImportance");
+    if (minImportanceParam !== null && minImportanceParam.trim() !== "") {
+      rawParams.minImportance = minImportanceParam.trim();
+    }
 
     // Validate parameters with Zod
     const validation = storiesQuerySchema.safeParse(rawParams);
@@ -89,7 +107,7 @@ export async function GET(request: Request) {
       );
     }
 
-    const { limit, offset, status, categoryId, personalized } = validation.data;
+    const { limit, offset, status, categoryId, personalized, sortBy, minImportance } = validation.data;
 
     // Personalized feed request
     if (personalized) {
@@ -122,6 +140,8 @@ export async function GET(request: Request) {
       offset,
       status,
       categoryId,
+      sortBy,
+      minImportance,
     });
 
     return NextResponse.json(

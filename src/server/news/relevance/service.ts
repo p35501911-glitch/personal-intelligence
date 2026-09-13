@@ -19,6 +19,7 @@ export interface PersonalizedStoryItem {
   importanceScore: number | null;
   status: string;
   relevance: RelevanceScoreResult;
+  feedScore: number;
 }
 
 export interface PersonalizedFeedOptions {
@@ -229,6 +230,12 @@ export async function getUserPersonalizedFeed(
       continue;
     }
 
+    const importanceVal = storyRow.importance_score ? Number(storyRow.importance_score) : 0.5;
+    const feedScore =
+      mode === "ALL"
+        ? Number((0.2 * relevance.score + 0.8 * importanceVal).toFixed(3))
+        : Number((0.65 * relevance.score + 0.35 * importanceVal).toFixed(3));
+
     scoredStories.push({
       id: storyRow.id,
       canonicalTitle: storyRow.canonical_title,
@@ -240,11 +247,15 @@ export async function getUserPersonalizedFeed(
       importanceScore: storyRow.importance_score ? Number(storyRow.importance_score) : null,
       status: storyRow.status,
       relevance,
+      feedScore,
     });
   }
 
-  // 4. Rank: primary sort by relevance.score DESC, tiebreak by latestPublishedAt DESC
+  // 4. Rank: primary sort by feedScore DESC, tiebreak by relevance.score DESC, tiebreak by latestPublishedAt DESC
   scoredStories.sort((a, b) => {
+    if (b.feedScore !== a.feedScore) {
+      return b.feedScore - a.feedScore;
+    }
     if (b.relevance.score !== a.relevance.score) {
       return b.relevance.score - a.relevance.score;
     }

@@ -33,4 +33,6 @@ export interface StoryFetchOptions {
   offset?: number;
   status?: string;
   categoryId?: string;
+  sortBy?: "recent" | "importance";
+  minImportance?: number;
 }
