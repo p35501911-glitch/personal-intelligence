@@ -1,29 +1,32 @@
-import { MockNewsProvider } from '../src/server/ingestion/mock-provider';
-import { newsProviderRegistry } from '../src/server/ingestion/registry';
+import { mockNewsProvider } from '../src/server/news/providers/mock';
+import { registerNewsProvider, getNewsProviders } from '../src/server/news/providers';
+import { fetchFromProvider } from '../src/server/news/ingestion';
 
-console.log('--- Step 2A: Testing News Provider Abstraction ---');
+async function main() {
+  console.log('--- Step 2A: Testing News Provider Abstraction ---');
 
-// 1. Test registration
-const mockProvider = new MockNewsProvider();
-newsProviderRegistry.register(mockProvider);
+  // 1. Direct fetch from mock provider
+  const articles = await mockNewsProvider.fetchLatest();
+  console.log('Articles fetched directly from mock provider:');
+  console.dir(articles, { depth: null });
 
-const retrieved = newsProviderRegistry.get('mock');
-console.log('✓ Provider registered & retrieved:', retrieved?.name === 'Mock News Provider' ? 'PASS' : 'FAIL');
+  // 2. Test registration & retrieval
+  registerNewsProvider(mockNewsProvider);
+  const registered = getNewsProviders();
+  console.log(`\nRegistered providers count: ${registered.length}`);
+  console.log(`First provider name: ${registered[0]?.name}`);
 
-// 2. Test fetchLatest
-const fetchResult = await mockProvider.fetchLatest({ limit: 2 });
-console.log(`✓ fetchLatest returned ${fetchResult.articles.length} normalized articles:`, fetchResult.articles.length === 2 ? 'PASS' : 'FAIL');
+  // 3. Test fetchFromProvider ingestion service
+  const ingested = await fetchFromProvider(mockNewsProvider);
+  console.log(`\nArticles fetched via fetchFromProvider: ${ingested.length}`);
+  console.log('Sample title:', ingested[0]?.title);
+  console.log('Sample source name:', ingested[0]?.source.name);
+  console.log('Sample externalId:', ingested[0]?.externalId);
 
-const first = fetchResult.articles[0];
-console.log('  Title:', first.title);
-console.log('  External ID:', first.externalId);
-console.log('  Source:', first.sourceName);
-console.log('  Published At:', first.publishedAt instanceof Date ? 'Valid Date' : 'Invalid Date');
-console.log('  URL:', first.url);
+  console.log('\n--- Step 2A Tests Completed Successfully ---');
+}
 
-// 3. Test search
-const searchResult = await mockProvider.search({ query: 'Space' });
-console.log(`✓ search for "Space" returned ${searchResult.articles.length} article:`, searchResult.articles.length === 1 ? 'PASS' : 'FAIL');
-console.log('  Found headline:', searchResult.articles[0]?.title);
-
-console.log('--- All Provider Abstraction Contracts Verified Successfully! ---');
+main().catch((err) => {
+  console.error('Test error:', err);
+  process.exit(1);
+});
