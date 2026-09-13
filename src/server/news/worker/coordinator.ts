@@ -220,7 +220,7 @@ export async function runIngestionCycle(
 
     // 5b. Shared Gemini AI Intelligence Processing (Non-blocking)
     try {
-      if (isGeminiConfigured()) {
+      if (isGeminiConfigured() && process.env.NODE_ENV !== "test") {
         console.log(`[Worker] Running shared Gemini AI intelligence pipeline...`);
         const aiStats = await processPendingStoryIntelligence({ supabaseClient: client });
         console.log(

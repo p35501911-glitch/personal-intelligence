@@ -279,7 +279,7 @@ test("Phase 3C — Free Gemini AI Intelligence Suite", async (t) => {
               in: () => Promise.resolve({
                 data: [{
                   story_id: existingStoryId,
-                  model: "gemini-2.5-flash",
+                  model: getGeminiConfig().model,
                   prompt_version: CURRENT_AI_PROMPT_VERSION,
                   status: "completed",
                   attempts: 1,
@@ -351,7 +351,7 @@ test("Phase 3C — Free Gemini AI Intelligence Suite", async (t) => {
               in: () => Promise.resolve({
                 data: [{
                   story_id: outdatedStoryId,
-                  model: "gemini-2.5-flash",
+                  model: getGeminiConfig().model,
                   prompt_version: 0, // Outdated version!
                   status: "completed",
                   attempts: 1,
