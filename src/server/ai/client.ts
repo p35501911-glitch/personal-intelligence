@@ -6,11 +6,11 @@ let clientApiKey: string | null = null;
 
 /**
  * Validates and retrieves current Gemini engine configuration from environment.
- * Default model: 'gemini-2.5-flash' (High quality, free-tier supported: 15 RPM, 1M TPM, 1,500 RPD).
+ * Default model: 'gemini-3.6-flash' (High quality, free-tier supported: 15 RPM, 1M TPM, 1,500 RPD).
  */
 export function getGeminiConfig(): GeminiEngineConfig {
   const apiKey = process.env.GEMINI_API_KEY?.trim() || undefined;
-  const model = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
+  const model = process.env.GEMINI_MODEL?.trim() || "gemini-3.6-flash";
   const promptVersion = Number(process.env.AI_PROMPT_VERSION) || 1;
   const batchSize = Math.max(1, Math.min(20, Number(process.env.GEMINI_BATCH_SIZE) || 5));
   const timeoutMs = Math.max(3000, Number(process.env.GEMINI_TIMEOUT_MS) || 20000);
