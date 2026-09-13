@@ -1,10 +1,14 @@
 import { NextResponse } from "next/server";
-import { gdeltNewsProvider } from "@/server/news/providers/gdelt";
+import { gdeltNewsProvider, rssNewsProvider } from "@/server/news/providers";
 import { ingestFromProvider } from "@/server/news/ingestion";
+import type { NewsProvider } from "@/server/news/types";
 
 export async function GET(request: Request) {
   // Development-only protection
-  if (process.env.NODE_ENV === "production" && !process.env.ALLOW_DEV_TEST_ENDPOINTS) {
+  if (
+    process.env.NODE_ENV === "production" &&
+    !process.env.ALLOW_DEV_TEST_ENDPOINTS
+  ) {
     return NextResponse.json(
       { error: "Development test endpoints are disabled in production." },
       { status: 403 }
@@ -13,17 +17,24 @@ export async function GET(request: Request) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const query = searchParams.get("query") || "technology";
+    const providerParam = (searchParams.get("provider") || "gdelt").toLowerCase();
+    const queryParam = searchParams.get("query");
+    const query = queryParam ?? (providerParam === "gdelt" ? "technology" : undefined);
     const limit = parseInt(searchParams.get("limit") || "5", 10);
 
-    const result = await ingestFromProvider(gdeltNewsProvider, {
+    let provider: NewsProvider = gdeltNewsProvider;
+    if (providerParam === "rss") {
+      provider = rssNewsProvider;
+    }
+
+    const result = await ingestFromProvider(provider, {
       query,
       pageSize: Math.min(Math.max(limit, 1), 50),
     });
 
     console.log(`\n========================================`);
     console.log(
-      `[GDELT Ingestion Test] Query: "${query}" | Fetched: ${result.stats.fetched} | Inserted: ${result.stats.inserted} | Updated: ${result.stats.updated} | Skipped: ${result.stats.skipped} | Failed: ${result.stats.failed}`
+      `[${provider.name.toUpperCase()} Ingestion Test] Query: "${query}" | Fetched: ${result.stats.fetched} | Inserted: ${result.stats.inserted} | Updated: ${result.stats.updated} | Skipped: ${result.stats.skipped} | Failed: ${result.stats.failed}`
     );
     console.log(
       `Timings: Fetch: ${result.timings.fetchDurationMs}ms | Persist: ${result.timings.persistDurationMs}ms | Total: ${result.timings.totalDurationMs}ms`
@@ -50,7 +61,7 @@ export async function GET(request: Request) {
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error("[GDELT Ingestion Test Endpoint] Error:", message);
+    console.error("[News Ingestion Test Endpoint] Error:", message);
     return NextResponse.json(
       {
         success: false,
