@@ -115,5 +115,6 @@ export interface GeminiEngineConfig {
   timeoutMs: number;
   maxRetries: number;
   enabled: boolean;
+  deepAnalysisEnabled: boolean;
   model: string; // compatibility fallback
 }

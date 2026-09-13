@@ -8,6 +8,7 @@ import {
   getFlashLiteModel,
   getFlashModel,
   isAiEnabled,
+  isDeepAnalysisEnabled,
 } from "../src/server/ai";
 
 async function main() {
@@ -28,6 +29,9 @@ async function main() {
 
   const args = process.argv.slice(2);
   const force = args.includes("--force");
+  if (args.includes("--no-deep") || args.includes("--disable-deep")) {
+    process.env.AI_DEEP_ANALYSIS_ENABLED = "false";
+  }
 
   // Parse --limit 2 or --limit=2
   let limit: number | undefined;
@@ -52,6 +56,7 @@ async function main() {
   console.log("[AI Pipeline] AI processing started");
   console.log(`[AI Pipeline] Flash-Lite Model: ${getFlashLiteModel()}`);
   console.log(`[AI Pipeline] Flash Model:      ${getFlashModel()}`);
+  console.log(`[AI Pipeline] Deep Analysis:     ${isDeepAnalysisEnabled() ? "enabled" : "disabled"}`);
   console.log(`[AI Pipeline] Options:          limit=${limit || "default"}, concurrency=${concurrency || 2}, force=${force}`);
 
   const stats = await processPendingStoryIntelligence({

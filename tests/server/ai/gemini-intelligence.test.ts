@@ -581,4 +581,233 @@ test("Tiered Free Gemini LLM Intelligence Pipeline — Step 14 Suite", async (t)
 
     clientTargets.forEach(checkPath);
   });
+
+  // 18. Flash unavailable falls back to Flash-Lite brief
+  await t.test("18. Flash model unavailable falls back safely to Flash-Lite brief with important tier", async () => {
+    let savedTier: string | null = null;
+    let savedSummary: string | null = null;
+
+    const mockSupabase = {
+      from: (table: string) => {
+        if (table === "stories") {
+          return {
+            select: () => ({
+              eq: () => ({
+                order: () => ({
+                  order: () => ({
+                    limit: () => Promise.resolve({
+                      data: [{
+                        id: "story-flash-unavail-test",
+                        canonical_title: "Breaking Critical Event",
+                        summary: "Brief synopsis",
+                        first_published_at: new Date().toISOString(),
+                        latest_published_at: new Date().toISOString(),
+                        article_count: 5,
+                        source_count: 4,
+                        importance_score: 0.95,
+                      }],
+                      error: null,
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === "story_intelligence") {
+          return {
+            select: () => ({
+              in: () => Promise.resolve({ data: [], error: null }),
+            }),
+            upsert: (payload: Record<string, unknown>) => {
+              savedTier = payload.tier as string;
+              savedSummary = payload.summary as string;
+              return Promise.resolve({ error: null });
+            },
+          };
+        }
+        return {
+          select: () => ({
+            eq: () => ({ limit: () => Promise.resolve({ data: [] }) }),
+            in: () => Promise.resolve({ data: [], error: null }),
+          }),
+          upsert: () => Promise.resolve({ error: null }),
+        };
+      },
+    } as unknown as SupabaseClient<Database>;
+
+    const mockGemini = {
+      models: {
+        generateContent: async (args: { model: string }) => {
+          if (args.model.includes("flash-lite")) {
+            return { text: JSON.stringify(IMPORTANT_TRIAGE_OUTPUT) };
+          }
+          // Flash model throws 503 Model Unavailable
+          throw new Error("Model is currently unavailable due to high demand (503)");
+        },
+      },
+    } as unknown as GoogleGenAI;
+
+    const stats = await processPendingStoryIntelligence({
+      supabaseClient: mockSupabase,
+      geminiClient: mockGemini,
+      limit: 1,
+    });
+
+    assert.equal(stats.processed, 1);
+    assert.equal(stats.succeeded, 1, "Must succeed using Flash-Lite fallback brief");
+    assert.equal(stats.important, 1);
+    assert.equal(savedTier, "important");
+    assert.equal(savedSummary, IMPORTANT_TRIAGE_OUTPUT.summary);
+  });
+
+  // 19. AI_DEEP_ANALYSIS_ENABLED=false skips Flash call
+  await t.test("19. AI_DEEP_ANALYSIS_ENABLED=false saves Flash-Lite brief without calling Flash", async () => {
+    let flashCalled = false;
+    let flashLiteCalled = false;
+
+    const mockSupabase = {
+      from: (table: string) => {
+        if (table === "stories") {
+          return {
+            select: () => ({
+              eq: () => ({
+                order: () => ({
+                  order: () => ({
+                    limit: () => Promise.resolve({
+                      data: [{
+                        id: "story-deep-disabled-test",
+                        canonical_title: "Deep Analysis Disabled Test",
+                        summary: "Brief synopsis",
+                        first_published_at: new Date().toISOString(),
+                        latest_published_at: new Date().toISOString(),
+                        article_count: 3,
+                        source_count: 2,
+                        importance_score: 0.85,
+                      }],
+                      error: null,
+                    }),
+                  }),
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === "story_intelligence") {
+          return {
+            select: () => ({ in: () => Promise.resolve({ data: [], error: null }) }),
+            upsert: () => Promise.resolve({ error: null }),
+          };
+        }
+        return {
+          select: () => ({
+            eq: () => ({ limit: () => Promise.resolve({ data: [] }) }),
+            in: () => Promise.resolve({ data: [], error: null }),
+          }),
+          upsert: () => Promise.resolve({ error: null }),
+        };
+      },
+    } as unknown as SupabaseClient<Database>;
+
+    const mockGemini = {
+      models: {
+        generateContent: async (args: { model: string }) => {
+          if (args.model.includes("flash-lite")) {
+            flashLiteCalled = true;
+            return { text: JSON.stringify(IMPORTANT_TRIAGE_OUTPUT) };
+          }
+          flashCalled = true;
+          return { text: JSON.stringify(DEEP_FLASH_OUTPUT) };
+        },
+      },
+    } as unknown as GoogleGenAI;
+
+    const prevDeep = process.env.AI_DEEP_ANALYSIS_ENABLED;
+    try {
+      process.env.AI_DEEP_ANALYSIS_ENABLED = "false";
+      const stats = await processPendingStoryIntelligence({
+        supabaseClient: mockSupabase,
+        geminiClient: mockGemini,
+        limit: 1,
+      });
+
+      assert.equal(stats.processed, 1);
+      assert.equal(stats.succeeded, 1);
+      assert.equal(stats.important, 1);
+      assert.equal(flashLiteCalled, true, "Flash-Lite triage must run");
+      assert.equal(flashCalled, false, "Flash deep synthesis must NOT be called when deep analysis is disabled");
+    } finally {
+      process.env.AI_DEEP_ANALYSIS_ENABLED = prevDeep;
+    }
+  });
+
+  // 20. Confirmed 429 quota error does not repeatedly retry
+  await t.test("20. Confirmed 429 quota exhaustion stops retry loop immediately", async () => {
+    let callAttempts = 0;
+    const err429 = new Error("Resource has been exhausted (e.g. check quota) - 429 Too Many Requests");
+
+    const mockClient = {
+      models: {
+        generateContent: async () => {
+          callAttempts++;
+          throw err429;
+        },
+      },
+    } as unknown as GoogleGenAI;
+
+    const res = await generateImportantStoryIntelligence(SAMPLE_STORY, {
+      client: mockClient,
+      maxRetries: 2, // Request 2 retries
+    });
+
+    assert.equal(res.success, false);
+    assert.equal(res.isRateLimited, true);
+    assert.equal(callAttempts, 1, "Must NOT repeatedly retry a confirmed 429 quota exhaustion error");
+  });
+
+  // 21. Flash-Lite unavailable handles failure gracefully
+  await t.test("21. Flash-Lite service failure returns safe fallback without crashing", async () => {
+    const mockClient = {
+      models: {
+        generateContent: async () => {
+          throw new Error("Service Unavailable (503)");
+        },
+      },
+    } as unknown as GoogleGenAI;
+
+    const triage = await classifyStoryWithFlashLite(SAMPLE_STORY, {
+      client: mockClient,
+      maxRetries: 0,
+    });
+
+    assert.equal(triage.success, false);
+    assert.ok(triage.data, "Must provide safe fallback data");
+    assert.equal(triage.data.tier, "normal");
+    assert.ok(triage.error?.includes("503"));
+  });
+
+  // 22. Concurrency and batch size limits are enforced
+  await t.test("22. Concurrency and batch size limits are clamped to safe values", () => {
+    const prevBatch = process.env.AI_BATCH_SIZE;
+    const prevConc = process.env.AI_CONCURRENCY;
+
+    try {
+      // Over-limit values
+      process.env.AI_BATCH_SIZE = "100";
+      process.env.AI_CONCURRENCY = "20";
+      const config1 = getGeminiConfig();
+      assert.ok(config1.batchSize <= 20, "Batch size must be clamped to safe maximum");
+      assert.ok(config1.concurrency <= 5, "Concurrency must be clamped to safe maximum");
+
+      // Under-limit values
+      process.env.AI_BATCH_SIZE = "0";
+      process.env.AI_CONCURRENCY = "-1";
+      const config2 = getGeminiConfig();
+      assert.ok(config2.batchSize >= 1, "Batch size minimum is 1");
+      assert.ok(config2.concurrency >= 1, "Concurrency minimum is 1");
+    } finally {
+      process.env.AI_BATCH_SIZE = prevBatch;
+      process.env.AI_CONCURRENCY = prevConc;
+    }
+  });
 });

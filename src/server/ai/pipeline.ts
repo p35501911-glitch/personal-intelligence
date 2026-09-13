@@ -189,6 +189,7 @@ export async function processPendingStoryIntelligence(options?: {
     }
 
     // 4. Process each eligible story
+    let flashModelExhausted = false;
     for (let i = 0; i < eligibleStories.length; i++) {
       const story = eligibleStories[i];
       stats.processed++;
@@ -303,50 +304,44 @@ export async function processPendingStoryIntelligence(options?: {
         stats.failed++;
         stats.errors.push(`Flash-Lite triage error for "${storyInput.canonicalTitle}": ${triage.error}`);
         // Record failure in DB so we don't retry endlessly
-        await client.from("story_intelligence").upsert(
-          {
-            story_id: story.id,
-            model: config.flashLiteModel,
-            prompt_version: config.promptVersion,
-            tier: "normal",
-            summary: storyInput.summary || storyInput.canonicalTitle,
-            key_points: [storyInput.canonicalTitle],
-            why_it_matters: "",
-            opportunities: [],
-            risks: [],
-            status: "failed",
-            error_message: triage.error,
-            attempts: (intelMap.get(story.id)?.attempts || 0) + 1,
-            last_attempt_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "story_id" }
-        );
+        await saveStoryIntelligenceWithFallback(client, {
+          story_id: story.id,
+          model: config.flashLiteModel,
+          prompt_version: config.promptVersion,
+          tier: "normal",
+          summary: storyInput.summary || storyInput.canonicalTitle,
+          key_points: [storyInput.canonicalTitle],
+          why_it_matters: "",
+          opportunities: [],
+          risks: [],
+          status: "failed",
+          error_message: triage.error,
+          attempts: (intelMap.get(story.id)?.attempts || 0) + 1,
+          last_attempt_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
         continue;
       }
 
       // If marked irrelevant by AI, skip deep analysis and record as completed normal
       if (!triage.data.relevant) {
         stats.skipped++;
-        await client.from("story_intelligence").upsert(
-          {
-            story_id: story.id,
-            model: config.flashLiteModel,
-            prompt_version: config.promptVersion,
-            tier: "normal",
-            summary: triage.data.summary || storyInput.canonicalTitle,
-            key_points: triage.data.keyPoints.length > 0 ? triage.data.keyPoints : [storyInput.canonicalTitle],
-            why_it_matters: "",
-            opportunities: [],
-            risks: [],
-            status: "completed",
-            attempts: 1,
-            last_attempt_at: new Date().toISOString(),
-            generated_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "story_id" }
-        );
+        await saveStoryIntelligenceWithFallback(client, {
+          story_id: story.id,
+          model: config.flashLiteModel,
+          prompt_version: config.promptVersion,
+          tier: "normal",
+          summary: triage.data.summary || storyInput.canonicalTitle,
+          key_points: triage.data.keyPoints.length > 0 ? triage.data.keyPoints : [storyInput.canonicalTitle],
+          why_it_matters: "",
+          opportunities: [],
+          risks: [],
+          status: "completed",
+          attempts: 1,
+          last_attempt_at: new Date().toISOString(),
+          generated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
         continue;
       }
 
@@ -418,6 +413,32 @@ export async function processPendingStoryIntelligence(options?: {
           stats.failed++;
           stats.errors.push(`Exception saving normal intelligence: ${String(saveException)}`);
         }
+      } else if (!config.deepAnalysisEnabled || flashModelExhausted) {
+        // Step 5 Free-tier constraint: Flash deep-analysis stage can be disabled or
+        // gracefully fall back to Flash-Lite brief if Flash is disabled or quota was exhausted.
+        await saveStoryIntelligenceWithFallback(client, {
+          story_id: story.id,
+          model: config.flashLiteModel,
+          prompt_version: config.promptVersion,
+          tier: "important",
+          summary: triage.data.summary,
+          key_points: triage.data.keyPoints,
+          why_it_matters: "High-significance breaking event flagged by intelligence triage.",
+          opportunities: [],
+          risks: [],
+          status: "completed",
+          attempts: 1,
+          last_attempt_at: new Date().toISOString(),
+          generated_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+        stats.succeeded++;
+        stats.important++;
+        if (!config.deepAnalysisEnabled) {
+          console.log(`[AI Pipeline] Saved Flash-Lite brief for important story "${storyInput.canonicalTitle}" (deep analysis disabled via AI_DEEP_ANALYSIS_ENABLED=false).`);
+        } else {
+          console.log(`[AI Pipeline] Saved Flash-Lite brief fallback for important story "${storyInput.canonicalTitle}" (Flash quota exhausted).`);
+        }
       } else {
         // -----------------------------------------------------------------------
         // IMPORTANT STORY: Flash-Lite triage + Flash deep-analysis call!
@@ -434,6 +455,7 @@ export async function processPendingStoryIntelligence(options?: {
 
         if (!deepGen.success && deepGen.isRateLimited) {
           stats.rateLimited = true;
+          flashModelExhausted = true;
           // Gracefully save the Flash-Lite brief as fallback so we don't lose value
           await saveStoryIntelligenceWithFallback(client, {
             story_id: story.id,
@@ -454,8 +476,8 @@ export async function processPendingStoryIntelligence(options?: {
           stats.succeeded++;
           stats.important++;
           stats.errors.push(`Flash rate-limited on "${storyInput.canonicalTitle}"; saved Flash-Lite brief fallback.`);
-          console.warn(`[AI Pipeline] Halting remaining batch processing due to Flash rate limit.`);
-          break;
+          console.warn(`[AI Pipeline] Flash quota exhausted on "${storyInput.canonicalTitle}"; continuing remaining batch with Flash-Lite fallback.`);
+          continue;
         }
 
         if (!deepGen.success || !deepGen.data) {

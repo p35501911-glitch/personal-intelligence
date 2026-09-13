@@ -185,12 +185,14 @@ export async function generateImportantStoryIntelligence(
 
       if (isRateLimited) {
         console.warn(`[Flash] Rate limit encountered for story "${story.canonicalTitle}" (attempt ${attempt}/${maxRetries + 1}).`);
+        // Confirmed quota exhaustion: do not repeatedly retry
+        break;
       } else {
         console.warn(`[Flash] Error generating intelligence for story "${story.canonicalTitle}" (attempt ${attempt}/${maxRetries + 1}): ${lastError.message}`);
       }
 
       if (attempt <= maxRetries) {
-        const backoffMs = isRateLimited ? 4000 : 1500;
+        const backoffMs = 1500 * Math.pow(2, attempt - 1);
         await sleep(backoffMs);
       }
     }

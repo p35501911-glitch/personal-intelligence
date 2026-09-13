@@ -26,6 +26,13 @@ export function isAiEnabled(): boolean {
 }
 
 /**
+ * Returns whether Flash deep analysis is enabled for important stories (default: true).
+ */
+export function isDeepAnalysisEnabled(): boolean {
+  return process.env.AI_DEEP_ANALYSIS_ENABLED !== "false";
+}
+
+/**
  * Returns the score threshold separating Normal vs Important stories (default: 0.7).
  */
 export function getAiImportantThreshold(): number {
@@ -47,6 +54,7 @@ export function getGeminiConfig(): GeminiEngineConfig {
   const timeoutMs = Math.max(3000, Number(process.env.GEMINI_TIMEOUT_MS) || 20000);
   const maxRetries = Math.max(0, Math.min(3, Number(process.env.AI_MAX_RETRIES) || 1));
   const enabled = isAiEnabled();
+  const deepAnalysisEnabled = isDeepAnalysisEnabled();
 
   return {
     apiKey,
@@ -59,6 +67,7 @@ export function getGeminiConfig(): GeminiEngineConfig {
     timeoutMs,
     maxRetries,
     enabled,
+    deepAnalysisEnabled,
     model: flashModel, // compatibility fallback
   };
 }
