@@ -9,7 +9,13 @@ import { FeedEmptyState } from './feed-empty-state';
 import { StoryDetailModal } from './story-detail-modal';
 import { TAXONOMY_SEED } from '@/lib/data/categories-seed';
 import type { CategoryNode } from '@/types/category';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Keyboard } from 'lucide-react';
+import {
+  interpretFeedKeyboardEvent,
+  getNextSelectedIndex,
+  getPreviousSelectedIndex,
+  BookmarkDebounceGuard,
+} from './keyboard-navigation';
 
 interface FeedContainerProps {
   onOpenManageTopics?: () => void;
@@ -37,6 +43,9 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
 
   const [detailStory, setDetailStory] = useState<PersonalizedStoryItem | null>(null);
   const isMountedRef = useRef(true);
+  const [selectedIndex, setSelectedIndex] = useState<number>(-1);
+  const cardElementsRef = useRef<Map<string, HTMLElement>>(new Map());
+  const bookmarkGuardRef = useRef<BookmarkDebounceGuard>(new BookmarkDebounceGuard());
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -251,16 +260,19 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
     setMode(newMode);
     setActiveCategoryId(null);
     setOffset(0);
+    setSelectedIndex(-1);
   };
 
   const handleSelectCategory = (catId: string | null) => {
     setIsLoading(true);
     setActiveCategoryId(catId);
     setOffset(0);
+    setSelectedIndex(-1);
   };
 
   const handleRefresh = () => {
     setIsRefreshing(true);
+    setSelectedIndex(-1);
     executeFetch(0, false);
   };
 
@@ -301,6 +313,115 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
       );
     }
   }, []);
+
+  // Debounced bookmark handler to prevent duplicate network requests on rapid S presses
+  const handleToggleSaveWithDebounce = useCallback(
+    async (storyId: string, currentSaved: boolean) => {
+      if (!bookmarkGuardRef.current.acquire(storyId)) {
+        return;
+      }
+      try {
+        await handleToggleSave(storyId, currentSaved);
+      } finally {
+        bookmarkGuardRef.current.release(storyId);
+      }
+    },
+    [handleToggleSave]
+  );
+
+  // Derive bounded selection index without cascading setState renders
+  const safeSelectedIndex =
+    stories.length === 0
+      ? -1
+      : selectedIndex >= stories.length
+      ? Math.max(0, stories.length - 1)
+      : selectedIndex;
+
+  // Close detail modal and restore focus to selected feed card
+  const handleCloseDetail = useCallback(() => {
+    setDetailStory(null);
+    if (safeSelectedIndex >= 0 && safeSelectedIndex < stories.length) {
+      const storyId = stories[safeSelectedIndex]?.id;
+      if (storyId) {
+        setTimeout(() => {
+          const el = cardElementsRef.current.get(storyId);
+          if (el && typeof el.focus === 'function') {
+            el.focus();
+          }
+        }, 50);
+      }
+    }
+  }, [safeSelectedIndex, stories]);
+
+  // Smooth scroll selected card into view
+  useEffect(() => {
+    if (safeSelectedIndex >= 0 && safeSelectedIndex < stories.length) {
+      const storyId = stories[safeSelectedIndex]?.id;
+      if (storyId) {
+        const el = cardElementsRef.current.get(storyId);
+        if (el) {
+          const prefersReducedMotion =
+            typeof window !== 'undefined' &&
+            window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+          el.scrollIntoView({
+            block: 'nearest',
+            behavior: prefersReducedMotion ? 'auto' : 'smooth',
+          });
+        }
+      }
+    }
+  }, [safeSelectedIndex, stories]);
+
+  // Single global keyboard listener for feed navigation
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const action = interpretFeedKeyboardEvent(
+        {
+          key: e.key,
+          target: e.target,
+          preventDefault: () => e.preventDefault(),
+        },
+        {
+          isModalOpen: Boolean(detailStory),
+          hasStories: stories.length > 0,
+        }
+      );
+
+      switch (action.type) {
+        case 'SELECT_NEXT': {
+          setSelectedIndex((prev) => getNextSelectedIndex(prev, stories.length));
+          break;
+        }
+        case 'SELECT_PREVIOUS': {
+          setSelectedIndex((prev) => getPreviousSelectedIndex(prev, stories.length));
+          break;
+        }
+        case 'OPEN_SELECTED': {
+          if (safeSelectedIndex >= 0 && safeSelectedIndex < stories.length) {
+            setDetailStory(stories[safeSelectedIndex]);
+          }
+          break;
+        }
+        case 'CLOSE_MODAL': {
+          handleCloseDetail();
+          break;
+        }
+        case 'TOGGLE_BOOKMARK': {
+          if (safeSelectedIndex >= 0 && safeSelectedIndex < stories.length) {
+            const s = stories[safeSelectedIndex];
+            handleToggleSaveWithDebounce(s.id, Boolean(s.isSaved));
+          }
+          break;
+        }
+        case 'IGNORE':
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [detailStory, stories, safeSelectedIndex, handleCloseDetail, handleToggleSaveWithDebounce]);
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -351,15 +472,58 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
           onOpenManageTopics={onOpenManageTopics}
         />
       ) : (
-        <div className="space-y-10">
+        <div className="space-y-6">
+          {/* Keyboard Shortcuts Hint Bar */}
+          <div className="flex flex-wrap items-center justify-between text-xs text-slate-500 bg-slate-900/50 border border-slate-800/80 rounded-xl px-4 py-2.5 shadow-sm">
+            <div className="flex items-center space-x-2 text-slate-400">
+              <Keyboard className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="font-semibold text-slate-300">Keyboard Shortcuts:</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px]">
+              <span className="flex items-center space-x-1">
+                <kbd className="font-mono bg-slate-800 border border-slate-700 px-1.5 py-0.5 rounded text-slate-300 text-[10px]">J</kbd>
+                <kbd className="font-mono bg-slate-800 border border-slate-700 px-1.5 py-0.5 rounded text-slate-300 text-[10px]">K</kbd>
+                <span className="text-slate-400">Navigate</span>
+              </span>
+              <span className="flex items-center space-x-1">
+                <kbd className="font-mono bg-slate-800 border border-slate-700 px-1.5 py-0.5 rounded text-slate-300 text-[10px]">Enter</kbd>
+                <span className="text-slate-500">/</span>
+                <kbd className="font-mono bg-slate-800 border border-slate-700 px-1.5 py-0.5 rounded text-slate-300 text-[10px]">O</kbd>
+                <span className="text-slate-400">Open</span>
+              </span>
+              <span className="flex items-center space-x-1">
+                <kbd className="font-mono bg-slate-800 border border-slate-700 px-1.5 py-0.5 rounded text-slate-300 text-[10px]">S</kbd>
+                <span className="text-slate-400">Save</span>
+              </span>
+              <span className="flex items-center space-x-1">
+                <kbd className="font-mono bg-slate-800 border border-slate-700 px-1.5 py-0.5 rounded text-slate-300 text-[10px]">Esc</kbd>
+                <span className="text-slate-400">Close</span>
+              </span>
+            </div>
+          </div>
+
           {/* Stories Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {stories.map((story) => (
+            {stories.map((story, index) => (
               <FeedCard
                 key={story.id}
                 story={story}
-                onOpenDetail={(s) => setDetailStory(s)}
-                onToggleSave={handleToggleSave}
+                isSelected={safeSelectedIndex === index}
+                onSelect={() => setSelectedIndex(index)}
+                cardRef={(node) => {
+                  if (node) {
+                    cardElementsRef.current.set(story.id, node);
+                  } else {
+                    cardElementsRef.current.delete(story.id);
+                  }
+                }}
+                onOpenDetail={(s) => {
+                  setSelectedIndex(index);
+                  setDetailStory(s);
+                }}
+                onToggleSave={(storyId, currentSaved) => {
+                  handleToggleSaveWithDebounce(storyId, currentSaved);
+                }}
               />
             ))}
           </div>
@@ -393,7 +557,7 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
           key={detailStory.id}
           story={detailStory}
           isOpen={true}
-          onClose={() => setDetailStory(null)}
+          onClose={handleCloseDetail}
         />
       )}
     </div>

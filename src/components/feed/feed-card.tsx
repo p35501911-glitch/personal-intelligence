@@ -8,6 +8,9 @@ interface FeedCardProps {
   story: PersonalizedStoryItem;
   onOpenDetail: (story: PersonalizedStoryItem) => void;
   onToggleSave?: (storyId: string, currentSaved: boolean, e: React.MouseEvent) => void;
+  isSelected?: boolean;
+  onSelect?: () => void;
+  cardRef?: (node: HTMLElement | null) => void;
 }
 
 /**
@@ -60,7 +63,14 @@ function getImportanceBadge(level: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW') {
   }
 }
 
-export function FeedCard({ story, onOpenDetail, onToggleSave }: FeedCardProps) {
+export function FeedCard({
+  story,
+  onOpenDetail,
+  onToggleSave,
+  isSelected = false,
+  onSelect,
+  cardRef,
+}: FeedCardProps) {
   const importanceBadge = getImportanceBadge(story.importance);
   const relativeTime = getRelativeTime(story.latestPublishedAt);
   const intel = story.intelligence;
@@ -78,8 +88,28 @@ export function FeedCard({ story, onOpenDetail, onToggleSave }: FeedCardProps) {
 
   return (
     <article
-      onClick={() => onOpenDetail(story)}
-      className="group relative flex flex-col justify-between bg-slate-900/70 hover:bg-slate-900 border border-slate-800 hover:border-indigo-500/40 rounded-2xl p-5 transition-all duration-200 cursor-pointer shadow-lg hover:shadow-indigo-500/10 hover:-translate-y-0.5"
+      ref={cardRef}
+      role="article"
+      tabIndex={0}
+      aria-current={isSelected ? 'true' : undefined}
+      data-selected={isSelected}
+      data-story-id={story.id}
+      onClick={() => {
+        if (onSelect) onSelect();
+        onOpenDetail(story);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          if (onSelect) onSelect();
+          onOpenDetail(story);
+        }
+      }}
+      className={`group relative flex flex-col justify-between rounded-2xl p-5 transition-all duration-200 cursor-pointer shadow-lg outline-none ${
+        isSelected
+          ? 'bg-slate-900 border-2 border-indigo-500 ring-2 ring-indigo-500/50 shadow-indigo-500/20 -translate-y-0.5'
+          : 'bg-slate-900/70 hover:bg-slate-900 border border-slate-800 hover:border-indigo-500/40 hover:shadow-indigo-500/10 hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-indigo-500'
+      }`}
     >
       <div>
         {/* Top Meta Bar: Category + Importance Level */}
@@ -107,6 +137,12 @@ export function FeedCard({ story, onOpenDetail, onToggleSave }: FeedCardProps) {
             >
               {importanceBadge.label}
             </span>
+
+            {isSelected && (
+              <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-indigo-950/80 border border-indigo-500/40 text-indigo-300">
+                [Enter]
+              </span>
+            )}
 
             {onToggleSave && (
               <button
