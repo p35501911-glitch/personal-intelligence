@@ -53,7 +53,7 @@ function getImportanceBadge(level: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW') {
 
 export function StoryDetailModal({ story, isOpen, onClose }: StoryDetailModalProps) {
   const [details, setDetails] = useState<StoryDetails | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Close on Escape key

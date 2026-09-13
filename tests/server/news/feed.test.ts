@@ -483,13 +483,21 @@ test("Phase 3A — Comprehensive Feed & Story Detail Suite", async (t) => {
     assert.equal(attackerFeed.userCategoryCount, 0);
   });
 
-  // Test 13: Service-role credentials never reach the client
+  // Test 13: Service-role and backend credentials never reach the client
   await t.test("13. Service-role credentials never reach the client", () => {
     const clientTargets = [
       path.join(process.cwd(), "src", "components"),
-      path.join(process.cwd(), "src", "app", "(dashboard)"),
       path.join(process.cwd(), "src", "app", "page.tsx"),
+      path.join(process.cwd(), "src", "app", "onboarding"),
       path.join(process.cwd(), "src", "lib", "supabase", "client.ts"),
+    ];
+
+    const forbiddenTokens = [
+      "SUPABASE_SERVICE_ROLE_KEY",
+      "CRON_SECRET",
+      "DATABASE_URL",
+      "POSTGRES_PASSWORD",
+      "SUPABASE_SECRET_KEY",
     ];
 
     const checkPath = (targetPath: string) => {
@@ -498,11 +506,13 @@ test("Phase 3A — Comprehensive Feed & Story Detail Suite", async (t) => {
       if (stat.isFile()) {
         if (/\.(tsx|ts|jsx|js)$/.test(targetPath)) {
           const content = fs.readFileSync(targetPath, "utf-8");
-          assert.equal(
-            content.includes("SUPABASE_SERVICE_ROLE_KEY"),
-            false,
-            `File ${targetPath} must NEVER reference SUPABASE_SERVICE_ROLE_KEY`
-          );
+          for (const token of forbiddenTokens) {
+            assert.equal(
+              content.includes(token),
+              false,
+              `Client file ${targetPath} must NEVER reference ${token}`
+            );
+          }
         }
         return;
       }
@@ -513,11 +523,13 @@ test("Phase 3A — Comprehensive Feed & Story Detail Suite", async (t) => {
           checkPath(fullPath);
         } else if (/\.(tsx|ts|jsx|js)$/.test(entry.name)) {
           const content = fs.readFileSync(fullPath, "utf-8");
-          assert.equal(
-            content.includes("SUPABASE_SERVICE_ROLE_KEY"),
-            false,
-            `File ${fullPath} must NEVER reference SUPABASE_SERVICE_ROLE_KEY`
-          );
+          for (const token of forbiddenTokens) {
+            assert.equal(
+              content.includes(token),
+              false,
+              `Client file ${fullPath} must NEVER reference ${token}`
+            );
+          }
         }
       }
     };

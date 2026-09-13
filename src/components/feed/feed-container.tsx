@@ -36,6 +36,14 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
   const [detailStory, setDetailStory] = useState<PersonalizedStoryItem | null>(null);
+  const isMountedRef = useRef(true);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
 
   // Build category ID -> Name map from TAXONOMY_SEED
   const categoryNamesMap = React.useMemo(() => {
@@ -58,6 +66,7 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
         const res = await fetch('/api/user/categories');
         if (res.ok) {
           const data = await res.json();
+          if (!isMountedRef.current) return;
           if (data.mode === 'ALL') {
             setMode('ALL');
             setUserCategoryIds([]);
@@ -73,7 +82,7 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
     loadPreferences();
   }, []);
 
-  // 2. Fetch stories whenever filters change
+  // 2. Fetch feed stories when filters, category, or mode change
   useEffect(() => {
     let isCancelled = false;
 
@@ -101,17 +110,18 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
         }
 
         const data = await res.json();
-        if (!isCancelled) {
-          const incomingStories: PersonalizedStoryItem[] = data.stories || data.feed || [];
-          setStories(incomingStories);
+        if (!isCancelled && isMountedRef.current) {
+          const fetchedStories: PersonalizedStoryItem[] = data.stories || data.feed || [];
+          setStories(fetchedStories);
           setOffset(0);
           setHasMore(Boolean(data.pagination?.hasMore));
+          setErrorMessage(null);
           setLastUpdated(new Date());
           setIsLoading(false);
           setIsRefreshing(false);
         }
       } catch (err: unknown) {
-        if (!isCancelled) {
+        if (!isCancelled && isMountedRef.current) {
           const msg = err instanceof Error ? err.message : 'Error loading intelligence feed';
           setErrorMessage(msg);
           setIsLoading(false);
@@ -153,11 +163,17 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
         }
 
         const data = await res.json();
+        if (!isMountedRef.current) return;
+
         const incomingStories: PersonalizedStoryItem[] = data.stories || data.feed || [];
         const incomingHasMore: boolean = Boolean(data.pagination?.hasMore);
 
         if (isAppend) {
-          setStories((prev) => [...prev, ...incomingStories]);
+          setStories((prev) => {
+            const existingIds = new Set(prev.map((s) => s.id));
+            const uniqueIncoming = incomingStories.filter((s) => !existingIds.has(s.id));
+            return [...prev, ...uniqueIncoming];
+          });
         } else {
           setStories(incomingStories);
         }
@@ -166,32 +182,60 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
         setHasMore(incomingHasMore);
         setLastUpdated(new Date());
       } catch (err: unknown) {
+        if (!isMountedRef.current) return;
         const msg = err instanceof Error ? err.message : 'Error loading intelligence feed';
         if (!isAppend) {
           setErrorMessage(msg);
         }
       } finally {
-        setIsLoading(false);
-        setIsRefreshing(false);
-        setIsLoadingMore(false);
+        if (isMountedRef.current) {
+          setIsLoading(false);
+          setIsRefreshing(false);
+          setIsLoadingMore(false);
+        }
       }
     },
     [mode, activeCategoryId, importanceFilter, sortBy]
   );
 
   // 4. Visibility-aware 60s background polling
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
   useEffect(() => {
-    pollingRef.current = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        executeFetch(0, false);
+    let intervalId: NodeJS.Timeout | null = null;
+
+    const startPolling = () => {
+      if (!intervalId) {
+        intervalId = setInterval(() => {
+          if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+            executeFetch(0, false);
+          }
+        }, POLLING_INTERVAL_MS);
       }
-    }, POLLING_INTERVAL_MS);
+    };
+
+    const stopPolling = () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        startPolling();
+      } else {
+        stopPolling();
+      }
+    };
+
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+      startPolling();
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-      }
+      stopPolling();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [executeFetch]);
 
@@ -306,11 +350,14 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
       )}
 
       {/* Story Detail Slide-over / Modal */}
-      <StoryDetailModal
-        story={detailStory}
-        isOpen={!!detailStory}
-        onClose={() => setDetailStory(null)}
-      />
+      {detailStory && (
+        <StoryDetailModal
+          key={detailStory.id}
+          story={detailStory}
+          isOpen={true}
+          onClose={() => setDetailStory(null)}
+        />
+      )}
     </div>
   );
 }
