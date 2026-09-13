@@ -159,13 +159,23 @@ export function StoryDetailModal({ story, isOpen, onClose }: StoryDetailModalPro
             </h1>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors shrink-0"
-            aria-label="Close story detail"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center space-x-2 shrink-0">
+            <div className="hidden sm:flex items-center space-x-1.5 text-xs text-slate-400 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700/60 mr-1">
+              <kbd className="font-mono font-medium text-slate-300">J</kbd>
+              <kbd className="font-mono font-medium text-slate-300">K</kbd>
+              <span className="text-[11px]">Navigate</span>
+              <span>•</span>
+              <kbd className="font-mono font-medium text-slate-300">Esc</kbd>
+            </div>
+
+            <button
+              onClick={onClose}
+              className="p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-800 transition-colors shrink-0"
+              aria-label="Close story detail"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Scrollable Content */}

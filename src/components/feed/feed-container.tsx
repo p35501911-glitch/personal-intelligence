@@ -14,6 +14,7 @@ import {
   interpretFeedKeyboardEvent,
   getNextSelectedIndex,
   getPreviousSelectedIndex,
+  resolveSelectedStoryIndex,
   BookmarkDebounceGuard,
 } from './keyboard-navigation';
 
@@ -44,6 +45,7 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
   const [detailStory, setDetailStory] = useState<PersonalizedStoryItem | null>(null);
   const isMountedRef = useRef(true);
   const [selectedIndex, setSelectedIndex] = useState<number>(-1);
+  const [selectedStoryId, setSelectedStoryId] = useState<string | null>(null);
   const cardElementsRef = useRef<Map<string, HTMLElement>>(new Map());
   const bookmarkGuardRef = useRef<BookmarkDebounceGuard>(new BookmarkDebounceGuard());
 
@@ -261,6 +263,7 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
     setActiveCategoryId(null);
     setOffset(0);
     setSelectedIndex(-1);
+    setSelectedStoryId(null);
   };
 
   const handleSelectCategory = (catId: string | null) => {
@@ -268,11 +271,13 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
     setActiveCategoryId(catId);
     setOffset(0);
     setSelectedIndex(-1);
+    setSelectedStoryId(null);
   };
 
   const handleRefresh = () => {
     setIsRefreshing(true);
     setSelectedIndex(-1);
+    setSelectedStoryId(null);
     executeFetch(0, false);
   };
 
@@ -329,13 +334,9 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
     [handleToggleSave]
   );
 
-  // Derive bounded selection index without cascading setState renders
-  const safeSelectedIndex =
-    stories.length === 0
-      ? -1
-      : selectedIndex >= stories.length
-      ? Math.max(0, stories.length - 1)
-      : selectedIndex;
+  // Reconcile and derive bounded selection index with stable story tracking
+  const resolvedSelection = resolveSelectedStoryIndex(selectedStoryId, stories, selectedIndex);
+  const safeSelectedIndex = resolvedSelection.index;
 
   // Close detail modal and restore focus to selected feed card
   const handleCloseDetail = useCallback(() => {
@@ -379,6 +380,10 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
         {
           key: e.key,
           target: e.target,
+          ctrlKey: e.ctrlKey,
+          metaKey: e.metaKey,
+          altKey: e.altKey,
+          shiftKey: e.shiftKey,
           preventDefault: () => e.preventDefault(),
         },
         {
@@ -389,21 +394,51 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
 
       switch (action.type) {
         case 'SELECT_NEXT': {
-          setSelectedIndex((prev) => getNextSelectedIndex(prev, stories.length));
+          const nextIdx = getNextSelectedIndex(safeSelectedIndex, stories.length);
+          setSelectedIndex(nextIdx);
+          if (nextIdx >= 0 && nextIdx < stories.length) {
+            setSelectedStoryId(stories[nextIdx].id);
+          }
           break;
         }
         case 'SELECT_PREVIOUS': {
-          setSelectedIndex((prev) => getPreviousSelectedIndex(prev, stories.length));
+          const prevIdx = getPreviousSelectedIndex(safeSelectedIndex, stories.length);
+          setSelectedIndex(prevIdx);
+          if (prevIdx >= 0 && prevIdx < stories.length) {
+            setSelectedStoryId(stories[prevIdx].id);
+          }
           break;
         }
         case 'OPEN_SELECTED': {
           if (safeSelectedIndex >= 0 && safeSelectedIndex < stories.length) {
-            setDetailStory(stories[safeSelectedIndex]);
+            const story = stories[safeSelectedIndex];
+            setSelectedStoryId(story.id);
+            setDetailStory(story);
           }
           break;
         }
         case 'CLOSE_MODAL': {
           handleCloseDetail();
+          break;
+        }
+        case 'MODAL_NEXT': {
+          const nextIdx = getNextSelectedIndex(safeSelectedIndex, stories.length);
+          setSelectedIndex(nextIdx);
+          if (nextIdx >= 0 && nextIdx < stories.length) {
+            const nextStory = stories[nextIdx];
+            setSelectedStoryId(nextStory.id);
+            setDetailStory(nextStory);
+          }
+          break;
+        }
+        case 'MODAL_PREVIOUS': {
+          const prevIdx = getPreviousSelectedIndex(safeSelectedIndex, stories.length);
+          setSelectedIndex(prevIdx);
+          if (prevIdx >= 0 && prevIdx < stories.length) {
+            const prevStory = stories[prevIdx];
+            setSelectedStoryId(prevStory.id);
+            setDetailStory(prevStory);
+          }
           break;
         }
         case 'TOGGLE_BOOKMARK': {
@@ -509,7 +544,10 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
                 key={story.id}
                 story={story}
                 isSelected={safeSelectedIndex === index}
-                onSelect={() => setSelectedIndex(index)}
+                onSelect={() => {
+                  setSelectedIndex(index);
+                  setSelectedStoryId(story.id);
+                }}
                 cardRef={(node) => {
                   if (node) {
                     cardElementsRef.current.set(story.id, node);
@@ -519,6 +557,7 @@ export function FeedContainer({ onOpenManageTopics }: FeedContainerProps) {
                 }}
                 onOpenDetail={(s) => {
                   setSelectedIndex(index);
+                  setSelectedStoryId(s.id);
                   setDetailStory(s);
                 }}
                 onToggleSave={(storyId, currentSaved) => {

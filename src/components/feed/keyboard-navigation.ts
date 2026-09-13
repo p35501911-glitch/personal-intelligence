@@ -2,8 +2,8 @@
  * Keyboard Navigation Controller & Helpers for Personal Intelligence Feed.
  *
  * Supported shortcuts:
- * - J / j: Move selection to next story
- * - K / k: Move selection to previous story
+ * - J / j: Move selection to next story (in feed or within open modal)
+ * - K / k: Move selection to previous story (in feed or within open modal)
  * - Enter / O / o: Open currently selected story in detail modal
  * - Escape: Close detail modal and return focus to feed
  * - S / s: Toggle bookmark on currently selected story (with in-flight debounce guard)
@@ -12,6 +12,10 @@
 export interface FeedKeyEvent {
   key: string;
   target: unknown;
+  ctrlKey?: boolean;
+  metaKey?: boolean;
+  altKey?: boolean;
+  shiftKey?: boolean;
   preventDefault?: () => void;
 }
 
@@ -20,6 +24,8 @@ export type FeedKeyboardActionType =
   | 'SELECT_PREVIOUS'
   | 'OPEN_SELECTED'
   | 'CLOSE_MODAL'
+  | 'MODAL_NEXT'
+  | 'MODAL_PREVIOUS'
   | 'TOGGLE_BOOKMARK'
   | 'IGNORE';
 
@@ -82,6 +88,35 @@ export function getPreviousSelectedIndex(currentIndex: number, totalCount: numbe
 }
 
 /**
+ * Reconciles selected story state when feed refreshes or filters change.
+ * Preserves selection if story is still present in feed; safely resets if it disappeared.
+ */
+export function resolveSelectedStoryIndex(
+  selectedStoryId: string | null,
+  stories: Array<{ id: string }>,
+  fallbackIndex: number = -1
+): { index: number; storyId: string | null } {
+  if (stories.length === 0) {
+    return { index: -1, storyId: null };
+  }
+
+  if (selectedStoryId) {
+    const foundIndex = stories.findIndex((s) => s.id === selectedStoryId);
+    if (foundIndex !== -1) {
+      return { index: foundIndex, storyId: selectedStoryId };
+    }
+    // Story disappeared after refresh/filter
+    return { index: -1, storyId: null };
+  }
+
+  if (fallbackIndex >= 0 && fallbackIndex < stories.length) {
+    return { index: fallbackIndex, storyId: stories[fallbackIndex].id };
+  }
+
+  return { index: -1, storyId: null };
+}
+
+/**
  * In-flight debounce guard for bookmark operations to prevent race conditions
  * or duplicate network requests from rapid keyboard presses.
  */
@@ -129,11 +164,17 @@ export interface FeedKeyboardOptions {
 
 /**
  * Interprets a raw keydown event and determines the appropriate feed action.
+ * Strictly respects browser shortcuts by ignoring events with Ctrl, Meta, or Alt keys.
  */
 export function interpretFeedKeyboardEvent(
   event: FeedKeyEvent,
   options: FeedKeyboardOptions = {}
 ): FeedKeyboardAction {
+  // Never interfere with browser native shortcuts (Ctrl+J, Cmd+K, Alt+Left, etc.)
+  if (event.ctrlKey || event.metaKey || event.altKey) {
+    return { type: 'IGNORE' };
+  }
+
   // If target is inside an input/textarea/editable element, ignore all feed shortcuts
   if (isEditableTarget(event.target)) {
     return { type: 'IGNORE' };
@@ -141,14 +182,35 @@ export function interpretFeedKeyboardEvent(
 
   const key = event.key;
 
-  // When modal is open: Escape closes modal
+  // When modal is open:
+  // - Escape closes the modal
+  // - J moves to and displays the next story in the modal
+  // - K moves to and displays the previous story in the modal
+  // - S toggles bookmark on the currently open story
   if (options.isModalOpen) {
-    if (key === 'Escape') {
-      if (typeof event.preventDefault === 'function') event.preventDefault();
-      return { type: 'CLOSE_MODAL' };
+    switch (key) {
+      case 'Escape': {
+        if (typeof event.preventDefault === 'function') event.preventDefault();
+        return { type: 'CLOSE_MODAL' };
+      }
+      case 'j':
+      case 'J': {
+        if (typeof event.preventDefault === 'function') event.preventDefault();
+        return { type: 'MODAL_NEXT' };
+      }
+      case 'k':
+      case 'K': {
+        if (typeof event.preventDefault === 'function') event.preventDefault();
+        return { type: 'MODAL_PREVIOUS' };
+      }
+      case 's':
+      case 'S': {
+        if (typeof event.preventDefault === 'function') event.preventDefault();
+        return { type: 'TOGGLE_BOOKMARK' };
+      }
+      default:
+        return { type: 'IGNORE' };
     }
-    // Don't trigger feed navigation behind open modal
-    return { type: 'IGNORE' };
   }
 
   // If there are no stories in the feed, no story actions can be performed

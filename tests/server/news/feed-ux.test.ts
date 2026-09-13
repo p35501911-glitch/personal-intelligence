@@ -328,18 +328,37 @@ test("Phase 3E: Feed UX Polish & Keyboard Navigation Suite", async (t) => {
     }
   });
 
-  await t.test("9. When modal is open, navigation keys (J, K, O, S) are ignored", () => {
-    const navKeys = ["j", "k", "o", "s", "Enter"];
+  await t.test("9. When modal is open, j/k navigates next/previous story and s bookmarks", () => {
+    const eventJ: FeedKeyEvent = { key: "j", target: null };
+    assert.strictEqual(
+      interpretFeedKeyboardEvent(eventJ, { isModalOpen: true, hasStories: true }).type,
+      "MODAL_NEXT"
+    );
 
-    for (const key of navKeys) {
-      const event: FeedKeyEvent = { key, target: null };
-      const action = interpretFeedKeyboardEvent(event, { isModalOpen: true, hasStories: true });
-      assert.strictEqual(
-        action.type,
-        "IGNORE",
-        `Key ${key} must be ignored when modal is open`
-      );
-    }
+    const eventK: FeedKeyEvent = { key: "k", target: null };
+    assert.strictEqual(
+      interpretFeedKeyboardEvent(eventK, { isModalOpen: true, hasStories: true }).type,
+      "MODAL_PREVIOUS"
+    );
+
+    const eventS: FeedKeyEvent = { key: "s", target: null };
+    assert.strictEqual(
+      interpretFeedKeyboardEvent(eventS, { isModalOpen: true, hasStories: true }).type,
+      "TOGGLE_BOOKMARK"
+    );
+
+    const eventEnter: FeedKeyEvent = { key: "Enter", target: null };
+    assert.strictEqual(
+      interpretFeedKeyboardEvent(eventEnter, { isModalOpen: true, hasStories: true }).type,
+      "IGNORE"
+    );
+
+    // Browser shortcuts with Ctrl / Meta are ignored
+    const eventCtrlJ: FeedKeyEvent = { key: "j", target: null, ctrlKey: true };
+    assert.strictEqual(
+      interpretFeedKeyboardEvent(eventCtrlJ, { isModalOpen: false, hasStories: true }).type,
+      "IGNORE"
+    );
   });
 
   await t.test("10. In-flight debounce guard prevents duplicate bookmark requests", () => {
