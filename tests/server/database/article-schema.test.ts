@@ -65,9 +65,11 @@ function createTestDatabase() {
       provider text not null,
       external_id text not null,
       title text not null,
+      normalized_title text,
       description text,
       content text,
       url text not null,
+      canonical_url text,
       image_url text,
       author text,
       published_at timestamptz not null,
@@ -83,6 +85,8 @@ function createTestDatabase() {
     create index articles_source_id_idx on public.articles(source_id);
     create index articles_provider_idx on public.articles(provider);
     create index articles_fetched_at_idx on public.articles(fetched_at desc);
+    create index articles_canonical_url_idx on public.articles(canonical_url);
+    create index articles_normalized_title_idx on public.articles(normalized_title);
   `);
 
   return db;

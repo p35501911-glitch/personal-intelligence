@@ -8,6 +8,8 @@ export type NormalizedArticle = {
   author: string | null;
   publishedAt: Date;
   language: string | null;
+  canonicalUrl?: string;
+  normalizedTitle?: string;
 
   source: {
     externalId: string;

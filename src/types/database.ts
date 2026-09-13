@@ -133,9 +133,11 @@ export interface Database {
           provider: string;
           external_id: string;
           title: string;
+          normalized_title: string | null;
           description: string | null;
           content: string | null;
           url: string;
+          canonical_url: string | null;
           image_url: string | null;
           author: string | null;
           published_at: string;
@@ -151,9 +153,11 @@ export interface Database {
           provider: string;
           external_id: string;
           title: string;
+          normalized_title?: string | null;
           description?: string | null;
           content?: string | null;
           url: string;
+          canonical_url?: string | null;
           image_url?: string | null;
           author?: string | null;
           published_at: string;
@@ -169,9 +173,11 @@ export interface Database {
           provider?: string;
           external_id?: string;
           title?: string;
+          normalized_title?: string | null;
           description?: string | null;
           content?: string | null;
           url?: string;
+          canonical_url?: string | null;
           image_url?: string | null;
           author?: string | null;
           published_at?: string;

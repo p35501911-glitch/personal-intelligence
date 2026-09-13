@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, InsertArticle, InsertSource, Json } from "@/types/database";
 import type { NormalizedArticle } from "./types";
 import { getServiceSupabaseClient } from "../supabase";
+import { canonicalizeUrl, normalizeTitle } from "./deduplication";
 
 export interface IngestionStats {
   provider: string;
@@ -11,6 +12,7 @@ export interface IngestionStats {
   skipped: number;
   failed: number;
   durationMs?: number;
+  errors?: string[];
 }
 
 export interface PersistArticlesOptions {
@@ -67,7 +69,8 @@ export function validateNormalizedArticle(
 export async function resolveSources(
   articles: NormalizedArticle[],
   provider: string,
-  supabase: SupabaseClient<Database>
+  supabase: SupabaseClient<Database>,
+  errors?: string[]
 ): Promise<Map<string, string>> {
   const sourceMap = new Map<string, string>();
   const uniqueSourcesMap = new Map<
@@ -94,22 +97,27 @@ export async function resolveSources(
   }
 
   try {
-    // 1. Check for existing sources
-    const { data: existingSources, error: fetchErr } = await supabase
-      .from("sources")
-      .select("id, external_id")
-      .eq("provider", provider)
-      .in("external_id", externalIds);
+    // 1. Check for existing sources in chunks to avoid URL size limits
+    const extIdChunks = chunkArray(externalIds, 50);
+    for (const chunk of extIdChunks) {
+      const { data: existingSources, error: fetchErr } = await supabase
+        .from("sources")
+        .select("id, external_id")
+        .eq("provider", provider)
+        .in("external_id", chunk);
 
-    if (fetchErr) {
-      console.error("[Persistence] Error querying existing sources:", fetchErr);
-    } else if (existingSources) {
-      for (const src of existingSources) {
-        sourceMap.set(src.external_id, src.id);
+      if (fetchErr) {
+        const msg = `[Persistence] Error querying existing sources for provider "${provider}": ${fetchErr.message} (code: ${fetchErr.code})`;
+        console.error(msg, fetchErr);
+        errors?.push(msg);
+      } else if (existingSources) {
+        for (const src of existingSources) {
+          sourceMap.set(src.external_id, src.id);
+        }
       }
     }
 
-    // 2. Insert missing sources
+    // 2. Insert missing sources in chunks to avoid payload limits
     const missingSources: InsertSource[] = [];
     for (const extId of externalIds) {
       if (!sourceMap.has(extId)) {
@@ -125,21 +133,28 @@ export async function resolveSources(
     }
 
     if (missingSources.length > 0) {
-      const { data: insertedSources, error: insertErr } = await supabase
-        .from("sources")
-        .upsert(missingSources, { onConflict: "provider,external_id" })
-        .select("id, external_id");
+      const missingChunks = chunkArray(missingSources, 50);
+      for (const chunk of missingChunks) {
+        const { data: insertedSources, error: insertErr } = await supabase
+          .from("sources")
+          .upsert(chunk, { onConflict: "provider,external_id" })
+          .select("id, external_id");
 
-      if (insertErr) {
-        console.error("[Persistence] Error inserting missing sources:", insertErr);
-      } else if (insertedSources) {
-        for (const src of insertedSources) {
-          sourceMap.set(src.external_id, src.id);
+        if (insertErr) {
+          const msg = `[Persistence] Error inserting missing sources for provider "${provider}": ${insertErr.message} (code: ${insertErr.code})`;
+          console.error(msg, insertErr);
+          errors?.push(msg);
+        } else if (insertedSources) {
+          for (const src of insertedSources) {
+            sourceMap.set(src.external_id, src.id);
+          }
         }
       }
     }
   } catch (err) {
-    console.error("[Persistence] Source resolution exception:", err);
+    const msg = `[Persistence] Source resolution exception for provider "${provider}": ${err instanceof Error ? err.message : String(err)}`;
+    console.error(msg, err);
+    errors?.push(msg);
   }
 
   return sourceMap;
@@ -182,24 +197,45 @@ export async function persistArticles(
     updated: 0,
     skipped: 0,
     failed: 0,
+    errors: [],
   };
 
   if (articles.length === 0) {
     return stats;
   }
 
-  // 1. Filter valid vs malformed articles
+  // 1. Filter valid vs malformed articles and deduplicate within the input batch
   const validArticles: NormalizedArticle[] = [];
+  const seenExternalIds = new Set<string>();
+  const seenCanonicalUrls = new Set<string>();
+
   for (const article of articles) {
-    if (validateNormalizedArticle(article)) {
-      validArticles.push(article);
-    } else {
+    if (!validateNormalizedArticle(article)) {
       stats.failed++;
-      console.warn(
-        `[Persistence] Skipping invalid article from provider "${provider}":`,
-        article
-      );
+      const msg = `[Persistence] Skipping invalid article from provider "${provider}": externalId="${(article as Record<string, unknown>)?.externalId || ""}", title="${(article as Record<string, unknown>)?.title || ""}"`;
+      console.warn(msg, article);
+      stats.errors?.push(msg);
+      continue;
     }
+
+    const canonicalUrl = canonicalizeUrl(article.url);
+    const normalizedTitle = normalizeTitle(article.title);
+    article.canonicalUrl = canonicalUrl || article.url;
+    article.normalizedTitle = normalizedTitle || article.title;
+
+    const trimmedId = article.externalId.trim();
+    if (seenExternalIds.has(trimmedId) || (canonicalUrl && seenCanonicalUrls.has(canonicalUrl))) {
+      if (ignoreDuplicates) {
+        stats.skipped++;
+      }
+      continue;
+    }
+
+    seenExternalIds.add(trimmedId);
+    if (canonicalUrl) {
+      seenCanonicalUrls.add(canonicalUrl);
+    }
+    validArticles.push(article);
   }
 
   if (validArticles.length === 0) {
@@ -207,7 +243,7 @@ export async function persistArticles(
   }
 
   // 2. Resolve sources in batch
-  const sourceIdMap = await resolveSources(validArticles, provider, client);
+  const sourceIdMap = await resolveSources(validArticles, provider, client, stats.errors);
 
   // 3. Process in batches
   const batches = chunkArray(validArticles, batchSize);
@@ -215,23 +251,44 @@ export async function persistArticles(
   for (const batch of batches) {
     try {
       const batchExternalIds = batch.map((a) => a.externalId.trim());
+      const batchCanonicalUrls = batch
+        .map((a) => a.canonicalUrl)
+        .filter((u): u is string => Boolean(u && u.length > 0));
 
-      // Query which articles already exist in the database for this batch
-      const { data: existingRows, error: checkErr } = await client
+      // Query which articles already exist in the database for this batch by (provider, external_id)
+      const { data: existingByExtId, error: checkErr } = await client
         .from("articles")
         .select("external_id")
         .eq("provider", provider)
         .in("external_id", batchExternalIds);
 
       if (checkErr) {
-        console.error(
-          `[Persistence] Error checking existing articles for provider "${provider}":`,
-          checkErr
-        );
+        const msg = `[Persistence] Error checking existing articles for provider "${provider}": ${checkErr.message} (code: ${checkErr.code})`;
+        console.error(msg, checkErr);
+        stats.errors?.push(msg);
       }
 
-      const existingSet = new Set(
-        (existingRows || []).map((row) => row.external_id)
+      // Query which articles already exist in the database for this batch by canonical_url
+      let existingByCanonicalUrl: { canonical_url: string | null }[] | null = null;
+      if (batchCanonicalUrls.length > 0) {
+        try {
+          const { data: urlMatches } = await client
+            .from("articles")
+            .select("canonical_url")
+            .in("canonical_url", batchCanonicalUrls);
+          existingByCanonicalUrl = urlMatches;
+        } catch {
+          // Graceful fallback if canonical_url column is not yet queried
+        }
+      }
+
+      const existingExtSet = new Set(
+        (existingByExtId || []).map((row) => row.external_id)
+      );
+      const existingUrlSet = new Set(
+        (existingByCanonicalUrl || [])
+          .map((row) => row.canonical_url)
+          .filter((u): u is string => Boolean(u))
       );
 
       const recordsToUpsert: InsertArticle[] = [];
@@ -240,10 +297,16 @@ export async function persistArticles(
 
       for (const article of batch) {
         const extId = article.externalId.trim();
-        const isExisting = existingSet.has(extId);
+        const canonical = article.canonicalUrl || article.url;
+        const isExisting =
+          existingExtSet.has(extId) ||
+          Boolean(canonical && existingUrlSet.has(canonical));
 
         if (isExisting) {
           existingCount++;
+          if (ignoreDuplicates) {
+            continue;
+          }
         } else {
           newCount++;
         }
@@ -258,9 +321,11 @@ export async function persistArticles(
           external_id: extId,
           source_id: sourceId,
           title: article.title.trim(),
+          normalized_title: article.normalizedTitle || normalizeTitle(article.title),
           description: article.description?.trim() || null,
           content: article.content?.trim() || null,
           url: article.url.trim(),
+          canonical_url: canonical,
           image_url: article.imageUrl?.trim() || null,
           author: article.author?.trim() || null,
           published_at: article.publishedAt.toISOString(),
@@ -270,33 +335,72 @@ export async function persistArticles(
         });
       }
 
-      // Perform batch upsert
-      const { error: upsertErr } = await client
-        .from("articles")
-        .upsert(recordsToUpsert, {
-          onConflict: "provider,external_id",
-          ignoreDuplicates,
-        });
+      if (recordsToUpsert.length > 0) {
+        // Perform batch upsert
+        const { error: upsertErr } = await client
+          .from("articles")
+          .upsert(recordsToUpsert, {
+            onConflict: "provider,external_id",
+            ignoreDuplicates,
+          });
 
-      if (upsertErr) {
-        console.error(
-          `[Persistence] Batch upsert error for provider "${provider}":`,
-          upsertErr
-        );
-        stats.failed += batch.length;
+        if (upsertErr) {
+          // If upsert fails because canonical_url / normalized_title column doesn't exist yet
+          if (
+            upsertErr.message.includes("canonical_url") ||
+            upsertErr.message.includes("normalized_title") ||
+            upsertErr.code === "42703"
+          ) {
+            const fallbackRecords = recordsToUpsert.map((r) => {
+              const rest = { ...r };
+              delete rest.canonical_url;
+              delete rest.normalized_title;
+              return rest;
+            });
+
+            const { error: fallbackErr } = await client
+              .from("articles")
+              .upsert(fallbackRecords as InsertArticle[], {
+                onConflict: "provider,external_id",
+                ignoreDuplicates,
+              });
+
+            if (fallbackErr) {
+              const msg = `[Persistence] Batch fallback upsert error for provider "${provider}": ${fallbackErr.message}`;
+              console.error(msg, fallbackErr);
+              stats.errors?.push(msg);
+              stats.failed += recordsToUpsert.length;
+            } else {
+              stats.inserted += newCount;
+              if (ignoreDuplicates) {
+                stats.skipped += existingCount;
+              } else {
+                stats.updated += existingCount;
+              }
+            }
+          } else {
+            const msg = `[Persistence] Batch upsert error for provider "${provider}": ${upsertErr.message} (code: ${upsertErr.code}${upsertErr.details ? `, details: ${upsertErr.details}` : ""})`;
+            console.error(msg, upsertErr);
+            stats.errors?.push(msg);
+            stats.failed += recordsToUpsert.length;
+          }
+        } else {
+          stats.inserted += newCount;
+          if (ignoreDuplicates) {
+            stats.skipped += existingCount;
+          } else {
+            stats.updated += existingCount;
+          }
+        }
       } else {
-        stats.inserted += newCount;
         if (ignoreDuplicates) {
           stats.skipped += existingCount;
-        } else {
-          stats.updated += existingCount;
         }
       }
     } catch (batchErr) {
-      console.error(
-        `[Persistence] Unexpected batch error for provider "${provider}":`,
-        batchErr
-      );
+      const msg = `[Persistence] Unexpected batch error for provider "${provider}": ${batchErr instanceof Error ? batchErr.message : String(batchErr)}`;
+      console.error(msg, batchErr);
+      stats.errors?.push(msg);
       stats.failed += batch.length;
     }
   }
