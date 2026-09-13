@@ -2,11 +2,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { getServiceSupabaseClient } from "../../supabase";
 import { getTaxonomyIndex } from "../categories/keywords";
-import {
-  computeUserRelevance,
-  type RelevanceScoreResult,
-  type StoryCategoryTag,
-} from "./scorer";
+import type { StoryCategoryTag, RelevanceScoreResult } from "./scorer";
+import { computeUserRelevance } from "./scorer";
+import type { StoryIntelligenceDetail } from "../stories";
 
 export interface PersonalizedStoryItem {
   id: string;
@@ -25,6 +23,7 @@ export interface PersonalizedStoryItem {
   status: string;
   relevance: RelevanceScoreResult;
   feedScore: number;
+  intelligence?: StoryIntelligenceDetail | null;
 }
 
 export interface PersonalizedFeedOptions {
@@ -312,6 +311,43 @@ export async function getUserPersonalizedFeed(
     console.warn("[Relevance Service] Non-fatal error fetching story media/sources:", mediaErr);
   }
 
+  // 2c. Fetch completed AI intelligence records for candidate stories in a single batch
+  const intelligenceByStory = new Map<string, StoryIntelligenceDetail>();
+  try {
+    const intelQuery = client?.from?.("story_intelligence");
+    if (intelQuery && typeof intelQuery.select === "function") {
+      const { data: rawIntel } = await intelQuery
+        .select("story_id, summary, key_points, why_it_matters, opportunities, risks, model, tier, status, generated_at")
+        .in("story_id", storyIds)
+        .eq("status", "completed");
+
+      for (const row of (rawIntel || []) as Array<{
+        story_id: string;
+        summary: string;
+        key_points: string[] | unknown;
+        why_it_matters: string | null;
+        opportunities: string[] | unknown;
+        risks: string[] | unknown;
+        model: string;
+        tier: string | null;
+        generated_at: string;
+      }>) {
+        intelligenceByStory.set(row.story_id, {
+          summary: row.summary,
+          keyPoints: Array.isArray(row.key_points) ? (row.key_points as string[]) : [],
+          whyItMatters: row.why_it_matters || "",
+          opportunities: Array.isArray(row.opportunities) ? (row.opportunities as string[]) : [],
+          risks: Array.isArray(row.risks) ? (row.risks as string[]) : [],
+          model: row.model,
+          tier: (row.tier as "normal" | "important") || "normal",
+          generatedAt: row.generated_at,
+        });
+      }
+    }
+  } catch (intelErr) {
+    console.warn("[Relevance Service] Non-fatal error fetching story intelligence:", intelErr);
+  }
+
   // 3. Compute relevance for each candidate story
   const scoredStories: PersonalizedStoryItem[] = [];
 
@@ -349,14 +385,16 @@ export async function getUserPersonalizedFeed(
         : Number((0.65 * relevance.score + 0.35 * importanceVal).toFixed(3));
 
     const media = storyMediaMap.get(storyRow.id) || { imageUrl: null, sources: [] };
+    const intel = intelligenceByStory.get(storyRow.id) || null;
     const impScore = storyRow.importance_score ? Number(storyRow.importance_score) : null;
     const importanceLevel = getImportanceLevel(impScore);
+    const summaryText = intel?.summary || storyRow.summary;
 
     scoredStories.push({
       id: storyRow.id,
       title: storyRow.canonical_title,
       canonicalTitle: storyRow.canonical_title,
-      summary: storyRow.summary,
+      summary: summaryText,
       imageUrl: media.imageUrl,
       firstPublishedAt: storyRow.first_published_at,
       latestPublishedAt: storyRow.latest_published_at,
@@ -369,6 +407,7 @@ export async function getUserPersonalizedFeed(
       status: storyRow.status,
       relevance,
       feedScore,
+      intelligence: intel,
     });
   }
 

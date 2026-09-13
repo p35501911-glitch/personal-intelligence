@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { PersonalizedStoryItem } from '@/server/news/relevance';
-import { Clock, Layers, Globe } from 'lucide-react';
+import { Clock, Layers, Globe, Sparkles } from 'lucide-react';
 
 interface FeedCardProps {
   story: PersonalizedStoryItem;
@@ -62,6 +62,8 @@ function getImportanceBadge(level: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW') {
 export function FeedCard({ story, onOpenDetail }: FeedCardProps) {
   const importanceBadge = getImportanceBadge(story.importance);
   const relativeTime = getRelativeTime(story.latestPublishedAt);
+  const intel = story.intelligence;
+  const isImportantAI = intel?.tier === 'important';
 
   // Extract publisher names preview (up to 3, plus "+N more")
   const sourceNames = story.sources && story.sources.length > 0
@@ -80,7 +82,7 @@ export function FeedCard({ story, onOpenDetail }: FeedCardProps) {
     >
       <div>
         {/* Top Meta Bar: Category + Importance Level */}
-        <div className="flex items-center justify-between gap-2 mb-3">
+        <div className="flex items-center justify-between gap-2 mb-2.5">
           <div className="flex items-center space-x-1.5 overflow-hidden">
             {categoryPills.length > 0 ? (
               categoryPills.map((cat) => (
@@ -104,6 +106,29 @@ export function FeedCard({ story, onOpenDetail }: FeedCardProps) {
             {importanceBadge.label}
           </span>
         </div>
+
+        {/* AI Tier Distinction Badge */}
+        {intel && (
+          <div
+            className={`inline-flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium mb-2.5 border transition-all ${
+              isImportantAI
+                ? 'bg-gradient-to-r from-indigo-950/80 via-purple-950/60 to-slate-900 border-indigo-500/40 text-indigo-300'
+                : 'bg-gradient-to-r from-cyan-950/70 via-teal-950/50 to-slate-900 border-cyan-500/30 text-cyan-300'
+            }`}
+          >
+            <Sparkles className={`w-3 h-3 shrink-0 ${isImportantAI ? 'text-indigo-400' : 'text-cyan-400'}`} />
+            <span>{isImportantAI ? 'Flash Deep Intelligence' : 'Flash-Lite Brief'}</span>
+            <span
+              className={`text-[10px] font-mono px-1.5 py-0.2 rounded border ${
+                isImportantAI
+                  ? 'bg-indigo-900/60 border-indigo-700/40 text-indigo-200'
+                  : 'bg-cyan-900/60 border-cyan-700/40 text-cyan-200'
+              }`}
+            >
+              {intel.model}
+            </span>
+          </div>
+        )}
 
         {/* Story Title */}
         <h2 className="text-base sm:text-lg font-bold text-white group-hover:text-indigo-300 transition-colors line-clamp-2 leading-snug tracking-tight mb-2">
@@ -129,9 +154,20 @@ export function FeedCard({ story, onOpenDetail }: FeedCardProps) {
 
         {/* Optional Summary / Description */}
         {story.summary && (
-          <p className="text-xs sm:text-sm text-slate-400 line-clamp-2 leading-relaxed mb-4">
+          <p className="text-xs sm:text-sm text-slate-400 line-clamp-2 leading-relaxed mb-3">
             {story.summary}
           </p>
+        )}
+
+        {/* Key Takeaway Snippet for Important Stories */}
+        {isImportantAI && intel.keyPoints && intel.keyPoints.length > 0 && (
+          <div className="mb-4 p-2.5 rounded-xl bg-indigo-950/25 border border-indigo-500/20 text-xs text-indigo-200/90 leading-relaxed flex items-start space-x-2">
+            <span className="text-indigo-400 font-bold shrink-0 mt-0.5">•</span>
+            <p className="line-clamp-2">
+              <strong className="text-indigo-300 font-semibold">Key Takeaway: </strong>
+              {intel.keyPoints[0]}
+            </p>
+          </div>
         )}
       </div>
 

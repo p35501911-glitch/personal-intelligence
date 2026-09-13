@@ -127,6 +127,7 @@ export function StoryDetailModal({ story, isOpen, onClose }: StoryDetailModalPro
 
   const importanceBadge = getImportanceBadge(story.importance);
   const articlesList = details?.articles || [];
+  const activeIntelligence = details?.intelligence || story.intelligence || null;
 
   return (
     <div
@@ -254,8 +255,8 @@ export function StoryDetailModal({ story, isOpen, onClose }: StoryDetailModalPro
             </div>
           )}
 
-          {/* Optional Summary */}
-          {story.summary && (
+          {/* Optional Baseline Synopsis (shown when AI card is pending or different) */}
+          {story.summary && (!activeIntelligence || story.summary !== activeIntelligence.summary) && (
             <div className="p-4 rounded-xl bg-indigo-950/20 border border-indigo-500/20 text-indigo-200/90 text-sm leading-relaxed">
               <strong className="text-indigo-300 block mb-1">Story Synopsis</strong>
               {story.summary}
@@ -263,9 +264,9 @@ export function StoryDetailModal({ story, isOpen, onClose }: StoryDetailModalPro
           )}
 
           {/* AI Intelligence Analysis Section */}
-          {details?.intelligence ? (
+          {activeIntelligence ? (
             (() => {
-              const isImportant = details.intelligence.tier === "important";
+              const isImportant = activeIntelligence.tier === "important";
               return (
                 <div
                   className={`rounded-2xl border p-5 space-y-4 shadow-xl relative overflow-hidden ${
@@ -300,13 +301,13 @@ export function StoryDetailModal({ story, isOpen, onClose }: StoryDetailModalPro
                                 : "bg-cyan-500/20 text-cyan-300 border-cyan-500/30"
                             }`}
                           >
-                            {details.intelligence.model}
+                            {activeIntelligence.model}
                           </span>
                         </h3>
                       </div>
                     </div>
                     <span className="text-[11px] text-slate-400">
-                      Synthesized {formatDetailTime(details.intelligence.generatedAt)}
+                      Synthesized {formatDetailTime(activeIntelligence.generatedAt)}
                     </span>
                   </div>
 
@@ -321,12 +322,12 @@ export function StoryDetailModal({ story, isOpen, onClose }: StoryDetailModalPro
                       <span>{isImportant ? "Executive Summary" : "Summary"}</span>
                     </h4>
                     <p className="text-sm text-slate-200 leading-relaxed bg-slate-950/50 p-3.5 rounded-xl border border-slate-800/80">
-                      {details.intelligence.summary}
+                      {activeIntelligence.summary}
                     </p>
                   </div>
 
                   {/* Key Points / Key Takeaways */}
-                  {details.intelligence.keyPoints && details.intelligence.keyPoints.length > 0 && (
+                  {activeIntelligence.keyPoints && activeIntelligence.keyPoints.length > 0 && (
                     <div>
                       <h4
                         className={`text-xs font-bold uppercase tracking-wider mb-2 flex items-center space-x-1.5 ${
@@ -337,7 +338,7 @@ export function StoryDetailModal({ story, isOpen, onClose }: StoryDetailModalPro
                         <span>{isImportant ? "Key Takeaways" : "Key Points"}</span>
                       </h4>
                       <ul className="space-y-1.5 bg-slate-950/40 p-3.5 rounded-xl border border-slate-800/60">
-                        {details.intelligence.keyPoints.map((point, idx) => (
+                        {activeIntelligence.keyPoints.map((point, idx) => (
                           <li key={idx} className="text-xs sm:text-sm text-slate-300 flex items-start space-x-2">
                             <span className={`font-bold shrink-0 mt-0.5 ${isImportant ? "text-indigo-400" : "text-cyan-400"}`}>
                               •
@@ -350,62 +351,62 @@ export function StoryDetailModal({ story, isOpen, onClose }: StoryDetailModalPro
                   )}
 
                   {/* Why It Matters (Important tier) */}
-                  {isImportant && details.intelligence.whyItMatters && (
+                  {isImportant && activeIntelligence.whyItMatters && (
                     <div className="p-3.5 rounded-xl bg-indigo-950/30 border border-indigo-500/20">
                       <h4 className="text-xs font-bold uppercase tracking-wider text-indigo-300 mb-1 flex items-center space-x-1.5">
                         <Lightbulb className="w-3.5 h-3.5 text-amber-400" />
                         <span>Why It Matters</span>
                       </h4>
                       <p className="text-xs sm:text-sm text-indigo-100/90 leading-relaxed">
-                        {details.intelligence.whyItMatters}
+                        {activeIntelligence.whyItMatters}
                       </p>
                     </div>
                   )}
 
-              {/* Opportunities & Risks 2-column grid */}
-              {((details.intelligence.opportunities && details.intelligence.opportunities.length > 0) ||
-                (details.intelligence.risks && details.intelligence.risks.length > 0)) && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-                  {/* Opportunities */}
-                  {details.intelligence.opportunities && details.intelligence.opportunities.length > 0 && (
-                    <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/20">
-                      <h5 className="text-xs font-bold text-emerald-400 mb-2 flex items-center space-x-1.5">
-                        <TrendingUp className="w-3.5 h-3.5" />
-                        <span>Opportunities</span>
-                      </h5>
-                      <ul className="space-y-1.5 text-xs text-slate-300">
-                        {details.intelligence.opportunities.map((opp, idx) => (
-                          <li key={idx} className="flex items-start space-x-1.5">
-                            <span className="text-emerald-400 font-bold shrink-0">+</span>
-                            <span>{opp}</span>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
+                  {/* Opportunities & Risks 2-column grid */}
+                  {((activeIntelligence.opportunities && activeIntelligence.opportunities.length > 0) ||
+                    (activeIntelligence.risks && activeIntelligence.risks.length > 0)) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                      {/* Opportunities */}
+                      {activeIntelligence.opportunities && activeIntelligence.opportunities.length > 0 && (
+                        <div className="p-3.5 rounded-xl bg-emerald-950/20 border border-emerald-500/20">
+                          <h5 className="text-xs font-bold text-emerald-400 mb-2 flex items-center space-x-1.5">
+                            <TrendingUp className="w-3.5 h-3.5" />
+                            <span>Opportunities</span>
+                          </h5>
+                          <ul className="space-y-1.5 text-xs text-slate-300">
+                            {activeIntelligence.opportunities.map((opp, idx) => (
+                              <li key={idx} className="flex items-start space-x-1.5">
+                                <span className="text-emerald-400 font-bold shrink-0">+</span>
+                                <span>{opp}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
 
-                  {/* Risks */}
-                  {details.intelligence.risks && details.intelligence.risks.length > 0 && (
-                    <div className="p-3.5 rounded-xl bg-rose-950/20 border border-rose-500/20">
-                      <h5 className="text-xs font-bold text-rose-400 mb-2 flex items-center space-x-1.5">
-                        <AlertTriangle className="w-3.5 h-3.5" />
-                        <span>Risks & Considerations</span>
-                      </h5>
-                      <ul className="space-y-1.5 text-xs text-slate-300">
-                        {details.intelligence.risks.map((risk, idx) => (
-                          <li key={idx} className="flex items-start space-x-1.5">
-                            <span className="text-rose-400 font-bold shrink-0">!</span>
-                            <span>{risk}</span>
-                          </li>
-                        ))}
-                      </ul>
+                      {/* Risks */}
+                      {activeIntelligence.risks && activeIntelligence.risks.length > 0 && (
+                        <div className="p-3.5 rounded-xl bg-rose-950/20 border border-rose-500/20">
+                          <h5 className="text-xs font-bold text-rose-400 mb-2 flex items-center space-x-1.5">
+                            <AlertTriangle className="w-3.5 h-3.5" />
+                            <span>Risks & Considerations</span>
+                          </h5>
+                          <ul className="space-y-1.5 text-xs text-slate-300">
+                            {activeIntelligence.risks.map((risk, idx) => (
+                              <li key={idx} className="flex items-start space-x-1.5">
+                                <span className="text-rose-400 font-bold shrink-0">!</span>
+                                <span>{risk}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              )}
-            </div>
-          );
-        })()
+              );
+            })()
           ) : !isLoading && (
             /* Fallback indicator when intelligence has not completed */
             <div className="p-3.5 rounded-xl bg-slate-950/40 border border-slate-800 text-xs text-slate-500 flex items-center justify-between">
