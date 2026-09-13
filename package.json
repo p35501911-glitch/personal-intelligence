@@ -11,6 +11,7 @@
     "test": "tsx --test tests/**/*.test.ts",
     "backfill:categories": "tsx scripts/backfill_categories.ts",
     "backfill:importance": "tsx scripts/backfill_importance.ts",
+    "ingest": "tsx scripts/run_ingestion.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

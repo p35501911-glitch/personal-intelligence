@@ -26,6 +26,7 @@ export type NewsFetchOptions = {
   to?: Date;
   page?: number;
   pageSize?: number;
+  limit?: number;
 };
 
 export type NewsProvider = {
