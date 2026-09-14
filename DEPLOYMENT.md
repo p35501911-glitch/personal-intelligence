@@ -25,6 +25,7 @@ supabase/migrations/20260913_story_intelligence.sql
 supabase/migrations/20260913_user_saved_stories.sql
 supabase/migrations/20260914_topic_digests.sql
 supabase/migrations/20260914_rls_security_hardening.sql
+supabase/migrations/20260914_system_job_runs.sql
 ```
 
 ### 1.3 Verify Row-Level Security (RLS)
@@ -107,12 +108,13 @@ Configure these in the Vercel Dashboard under **Project Settings** → **Environ
 3. Add the environment variables listed above.
 4. Deploy the `main` branch.
 
-### Scheduled Jobs (Vercel Cron)
+### Scheduled Jobs (Vercel Cron & Production Endpoints)
 The included `vercel.json` automatically schedules tasks:
-- **Hourly News Ingestion**: `/api/ingest` at minute 0 (`0 * * * *`)
-- **Hourly AI Processing**: `/api/ai/process` at minute 15 (`15 * * * *`)
-- **Daily Briefing Generation**: `/api/digests/generate?periodType=daily` at 06:00 UTC (`0 6 * * *`)
-- **Weekly Briefing Generation**: `/api/digests/generate?periodType=weekly` on Mondays at 06:00 UTC (`0 6 * * 1`)
+- **Hourly News Ingestion**: `/api/cron/ingestion` at minute 0 (`0 * * * *`)
+- **Hourly AI Processing**: `/api/cron/ai` at minute 15 (`15 * * * *`)
+- **Daily Briefing Generation**: `/api/cron/digests?periodType=daily` at 06:00 UTC (`0 6 * * *`)
+- **Weekly Briefing Generation**: `/api/cron/digests?periodType=weekly` on Mondays at 06:00 UTC (`0 6 * * 1`)
+- **Master Production Cycle (Optional On-Demand/Scheduled)**: `POST /api/cron/production` (runs Ingestion -> AI Processing -> Digest Generation in isolated sequence).
 
 ---
 

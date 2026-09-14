@@ -459,6 +459,69 @@ export interface Database {
         };
         Relationships: [];
       };
+      system_job_runs: {
+        Row: {
+          id: string;
+          job_name: string;
+          status: string;
+          started_at: string;
+          completed_at: string | null;
+          duration_ms: number | null;
+          records_processed: number;
+          records_created: number;
+          error_count: number;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          job_name: string;
+          status: string;
+          started_at?: string;
+          completed_at?: string | null;
+          duration_ms?: number | null;
+          records_processed?: number;
+          records_created?: number;
+          error_count?: number;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          job_name?: string;
+          status?: string;
+          started_at?: string;
+          completed_at?: string | null;
+          duration_ms?: number | null;
+          records_processed?: number;
+          records_created?: number;
+          error_count?: number;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      system_job_locks: {
+        Row: {
+          job_name: string;
+          locked_by: string;
+          acquired_at: string;
+          expires_at: string;
+        };
+        Insert: {
+          job_name: string;
+          locked_by: string;
+          acquired_at?: string;
+          expires_at: string;
+        };
+        Update: {
+          job_name?: string;
+          locked_by?: string;
+          acquired_at?: string;
+          expires_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: {
       [_ in never]: never;

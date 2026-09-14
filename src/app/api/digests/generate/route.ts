@@ -7,6 +7,8 @@ import {
   getClientIdentifier,
   RATE_LIMIT_CONFIGS,
   rateLimitExceededResponse,
+  acquireUserActionLock,
+  releaseUserActionLock,
 } from "@/server/security/rate-limiter";
 
 export const generateDigestBodySchema = z.object({
@@ -123,22 +125,39 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await generateTopicDigest({
-      userId: user.id,
-      periodType,
-      force,
-      client: supabase,
-    });
+    // In-flight concurrency lock: prevent user from firing duplicate simultaneous generations
+    const inFlightKey = `digest:inflight:${user.id}:${periodType}`;
+    if (!acquireUserActionLock(inFlightKey, 45000)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: "A briefing generation request is already in progress for your account. Please wait a moment.",
+          retryAfter: 15,
+        },
+        { status: 429 }
+      );
+    }
 
-    return NextResponse.json(
-      {
-        success: true,
-        digest: result.digest,
-        generated: result.generated,
-        source: result.source,
-      },
-      { status: result.generated ? 201 : 200 }
-    );
+    try {
+      const result = await generateTopicDigest({
+        userId: user.id,
+        periodType,
+        force,
+        client: supabase,
+      });
+
+      return NextResponse.json(
+        {
+          success: true,
+          digest: result.digest,
+          generated: result.generated,
+          source: result.source,
+        },
+        { status: result.generated ? 201 : 200 }
+      );
+    } finally {
+      releaseUserActionLock(inFlightKey);
+    }
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
     console.error("[Digest Generate API] Error generating briefing:", errorMsg);

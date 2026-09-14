@@ -18,6 +18,7 @@ export const dynamic = "force-dynamic";
  *
  * Security Invariant:
  * Never exposes API keys, service role tokens, credentials, or internal secret material.
+ * Zero Gemini API calls are made from this health check.
  */
 export async function GET() {
   const startTime = performance.now();
@@ -25,7 +26,7 @@ export async function GET() {
   let dbLatencyMs = 0;
   let dbError: string | null = null;
 
-  // 1. Check Database Connectivity
+  // 1. Check Database Connectivity (lightweight ping)
   try {
     const dbStart = performance.now();
     const client = getServiceSupabaseClient();
@@ -49,9 +50,11 @@ export async function GET() {
   const workerStatus = getWorkerStatus();
 
   // 3. AI Pipeline Telemetry (Sanitized)
+  const aiEnabled = isAiEnabled();
+  const aiConfigured = isGeminiConfigured();
   const aiStatus = {
-    enabled: isAiEnabled(),
-    configured: isGeminiConfigured(),
+    enabled: aiEnabled,
+    configured: aiConfigured,
     deepAnalysisEnabled: isDeepAnalysisEnabled(),
     models: {
       flashLite: getFlashLiteModel(),
@@ -72,9 +75,12 @@ export async function GET() {
 
   const payload = {
     status: isHealthy ? "ok" : "degraded",
+    database: dbConnected ? "ok" : "error",
+    ai: aiEnabled ? (aiConfigured ? "enabled" : "unconfigured") : "disabled",
+    version: "0.1.0",
     timestamp: new Date().toISOString(),
     latencyMs: overallLatencyMs,
-    database: {
+    databaseDetails: {
       connected: dbConnected,
       latencyMs: dbLatencyMs,
       ...(dbError ? { error: "Database query failed" } : {}),
@@ -94,7 +100,7 @@ export async function GET() {
           }
         : null,
     },
-    ai: aiStatus,
+    aiDetails: aiStatus,
     system: systemStatus,
   };
 

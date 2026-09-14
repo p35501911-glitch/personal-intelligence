@@ -161,11 +161,35 @@ export function rateLimitExceededResponse(
   );
 }
 
+const inFlightLocks = new Map<string, number>();
+
 /**
- * Resets the in-memory rate limit store. Useful for testing suites.
+ * Attempts to acquire an in-flight single-action lock for a user/action (e.g. digest generation).
+ * Prevents concurrent duplicate requests from overwhelming LLM services.
+ */
+export function acquireUserActionLock(key: string, timeoutMs = 30000): boolean {
+  const now = Date.now();
+  const expiresAt = inFlightLocks.get(key);
+  if (expiresAt && now < expiresAt) {
+    return false; // Still locked
+  }
+  inFlightLocks.set(key, now + timeoutMs);
+  return true;
+}
+
+/**
+ * Releases an in-flight single-action lock.
+ */
+export function releaseUserActionLock(key: string): void {
+  inFlightLocks.delete(key);
+}
+
+/**
+ * Resets the in-memory rate limit store and active locks. Useful for testing suites.
  */
 export function resetRateLimits(): void {
   rateLimitStore.clear();
+  inFlightLocks.clear();
   if (cleanupInterval) {
     clearInterval(cleanupInterval);
     cleanupInterval = null;
