@@ -1,5 +1,4 @@
 import React from 'react';
-import Link from 'next/link';
 import { DashboardView } from '@/components/dashboard-view';
 import { UserMenu } from '@/components/auth';
 import { TAXONOMY_SEED } from '@/lib/data/categories-seed';
@@ -26,13 +25,6 @@ export default function Home() {
           </div>
 
           <div className="flex items-center space-x-3">
-            <Link
-              href="/onboarding/categories"
-              className="hidden md:flex px-3.5 py-1.5 rounded-full text-xs font-bold bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 transition-all items-center space-x-1.5"
-            >
-              <span>Onboarding Flow</span>
-              <span>→</span>
-            </Link>
             <UserMenu />
           </div>
         </div>

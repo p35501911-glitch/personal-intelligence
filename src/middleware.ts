@@ -38,10 +38,32 @@ export async function middleware(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
 
-  // If user is logged in and visits /login, redirect to /
+  // If user is authenticated and visits /login, redirect to / or the requested return target
   if (user && pathname === "/login") {
+    const nextParam = request.nextUrl.searchParams.get("next");
+    const target =
+      nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//") && !nextParam.includes("\\")
+        ? nextParam
+        : "/";
     const url = request.nextUrl.clone();
-    url.pathname = "/";
+    url.pathname = target;
+    url.search = "";
+    return NextResponse.redirect(url);
+  }
+
+  // Protect application routes:
+  // Unauthenticated users attempting to access main application screens are redirected to /login
+  const isPublicRoute =
+    pathname === "/login" ||
+    pathname.startsWith("/auth/") ||
+    pathname.startsWith("/api/");
+
+  if (!user && !isPublicRoute) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/login";
+    if (pathname !== "/") {
+      url.searchParams.set("next", pathname);
+    }
     return NextResponse.redirect(url);
   }
 

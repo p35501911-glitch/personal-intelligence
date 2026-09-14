@@ -31,18 +31,38 @@ export async function GET(request: Request) {
 
   if (code) {
     const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    const { data, error } = await supabase.auth.exchangeCodeForSession(code);
 
     if (!error) {
+      let finalTarget = next;
+
+      // If default target '/' is used, check if the authenticated user
+      // has completed category onboarding. First-time users are guided to onboarding.
+      if (finalTarget === "/" && data?.user) {
+        try {
+          const { data: pref } = await supabase
+            .from("user_preferences")
+            .select("category_selection_mode")
+            .eq("user_id", data.user.id)
+            .maybeSingle();
+
+          if (!pref) {
+            finalTarget = "/onboarding/categories";
+          }
+        } catch (prefErr) {
+          console.warn("[Auth Callback] Could not check user preferences:", prefErr);
+        }
+      }
+
       const forwardedHost = request.headers.get("x-forwarded-host");
       const isLocalEnv = process.env.NODE_ENV === "development";
 
       if (isLocalEnv) {
-        return NextResponse.redirect(`${origin}${next}`);
+        return NextResponse.redirect(`${origin}${finalTarget}`);
       } else if (forwardedHost) {
-        return NextResponse.redirect(`https://${forwardedHost}${next}`);
+        return NextResponse.redirect(`https://${forwardedHost}${finalTarget}`);
       } else {
-        return NextResponse.redirect(`${origin}${next}`);
+        return NextResponse.redirect(`${origin}${finalTarget}`);
       }
     }
 

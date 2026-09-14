@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { CategoryNode } from '@/types/category';
 import { CategoryIcon } from '@/components/categories/icon-helper';
 import {
@@ -25,6 +26,7 @@ export function OnboardingCategorySelector({
   categories,
   onContinueSuccess,
 }: OnboardingCategorySelectorProps) {
+  const router = useRouter();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [mode, setMode] = useState<'CATEGORY' | 'ALL'>('CATEGORY');
   const [expandedMainId, setExpandedMainId] = useState<string | null>('cat-tech');
@@ -120,6 +122,9 @@ export function OnboardingCategorySelector({
       setIsCompleted(true);
       if (onContinueSuccess) {
         onContinueSuccess();
+      } else {
+        router.push('/');
+        router.refresh();
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Error saving selections.';

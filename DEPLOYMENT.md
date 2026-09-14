@@ -60,6 +60,23 @@ Verify in the Supabase Dashboard under **Table Editor** that RLS is active on:
      - `https://personal-intelligence.vercel.app/auth/callback`
      - `http://localhost:3000/auth/callback` (for local development)
 
+### 2.3 Authentication & Session Architecture
+- **Primary OAuth Action**: Users initiate login via "Continue with Google" on `/login`.
+- **OAuth Exchange**: Supabase handles the Google authorization code grant at `/auth/callback`. The server exchanges `code` via `supabase.auth.exchangeCodeForSession(code)` and issues HTTP-only session cookies.
+- **First-Time vs Returning Routing**:
+  - First-time users without `user_preferences` are automatically routed to `/onboarding/categories`.
+  - Returning users with existing preferences are routed directly to `/` (Personalized Feed).
+- **Session Persistence**: Managed via `@supabase/ssr` with cookie synchronization in `src/middleware.ts` and `src/lib/supabase/server.ts`.
+- **Logout Behavior**:
+  - Calling `supabase.auth.signOut()` invalidates the session and clears all session cookies.
+  - The client transitions immediately to `/login` and unauthenticated access to `/` or `/onboarding/*` is blocked.
+
+### 2.4 Authentication Troubleshooting
+- **Error: `redirect_uri_mismatch`**: Ensure Google Cloud Console authorized redirect URIs match `https://<project-id>.supabase.co/auth/v1/callback` exactly.
+- **Error: `auth_callback_failed`**: Occurs if the OAuth code is expired or replayed. The app safely redirects to `/login?error=auth_callback_failed` without crashing.
+- **Session Drops on Refresh**: Ensure `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` are defined in `.env.local` / Vercel Environment Variables.
+- **Open Redirect Protection**: `validateRedirectTarget()` strictly rejects protocol-relative (`//evil.com`) or absolute foreign URLs, defaulting to safe relative paths.
+
 ---
 
 ## 3. Environment Variables Reference
