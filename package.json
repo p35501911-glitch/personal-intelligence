@@ -13,12 +13,10 @@
     "backfill:importance": "tsx scripts/backfill_importance.ts",
     "ingest": "tsx scripts/run_ingestion.ts",
     "ai:process": "tsx scripts/run_ai_processing.ts",
-    "digest:generate": "tsx scripts/run_digest_generation.ts",
-    "postinstall": "prisma generate"
+    "digest:generate": "tsx scripts/run_digest_generation.ts"
   },
   "dependencies": {
     "@google/genai": "^2.22.0",
-    "@prisma/client": "^6.19.3",
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.116.0",
     "lucide-react": "^1.45.0",
@@ -39,7 +37,6 @@
     "eslint-config-next": "16.3.5",
     "pg": "^8.23.0",
     "pg-mem": "^3.0.14",
-    "prisma": "^6.19.3",
     "tailwindcss": "^4",
     "tsx": "^4.23.13",
     "typescript": "^5"

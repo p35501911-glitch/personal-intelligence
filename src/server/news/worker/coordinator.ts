@@ -97,13 +97,16 @@ export async function runIngestionCycle(
 
   console.log(`[Worker] Starting Ingestion Cycle ${cycleId}...`);
 
-  const client = getServiceSupabaseClient();
   const limitPerProvider = options.limitPerProvider ?? 30;
   const requestedProviders = options.providers || ["rss", "gdelt"];
   const providerStats: Record<string, IngestionStats> = {};
   const errors: string[] = [];
 
   try {
+    // Resolve the Supabase client inside the try so a config/connection
+    // failure still releases the mutex lock via the finally block.
+    const client = getServiceSupabaseClient();
+
     // 2. Prepare Provider Tasks
     const tasks: Array<{
       name: string;
