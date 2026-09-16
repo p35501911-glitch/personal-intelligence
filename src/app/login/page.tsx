@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, Suspense } from 'react';
+import { useState, Suspense } from 'react';
+import type React from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
