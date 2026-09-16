@@ -55,13 +55,16 @@ export async function generateTopicDigest(
     referenceTime = new Date(),
     force = false,
     model,
-    client = getServiceSupabaseClient(),
     geminiClient,
   } = options;
 
   if (!userId) {
     throw new Error("userId is required to generate a topic digest");
   }
+
+  // Resolve the Supabase client only AFTER validating input, so a missing
+  // userId surfaces a validation error rather than a config error.
+  const client = options.client ?? getServiceSupabaseClient();
 
   // 1. Resolve user category preferences
   const prefs = await getUserPreferencesData(userId, client);
